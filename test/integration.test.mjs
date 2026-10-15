@@ -139,9 +139,13 @@ test('real SDK stdio MCP creates, waits, reads original images, returns and acce
   const pending = call('wait_for_update', { after, ticket_id: ticket.id, timeout: 2 });
   current = submit(f.store, current); assert.equal(JSON.parse((await pending).content[0].text).events[0].type, 'submission.created');
   const submission = current.submissions.at(-1);
-  const returned = await call('review_ticket', { ticket_id: ticket.id, version: submission.version, submission_hash: submission.hash, decision: 'return', reason: 'Please clarify observation.' });
+  const returned = await call('review_ticket', { ticket_id: ticket.id, version: submission.version, submission_hash: submission.hash, decision: 'return', reason: 'Please clarify observation.', additional_units: [{ id: 'clarification', type: 'text', label: 'Clarification', required: true }] });
   assert.equal(JSON.parse(returned.content[0].text).status, 'returned');
-  current = submit(f.store, f.store.get(ticket.id));
+  current = f.store.get(ticket.id);
+  assert.equal(current.units.at(-1).id, 'clarification');
+  assert.deepEqual(current.submissions[0], submission);
+  current = f.store.updateDraft(ticket.id, { revision: current.revision, answers: { ...current.draft.answers, clarification: 'Manual clarification supplied.' }, note: '' });
+  current = f.store.submit(ticket.id, { revision: current.revision });
   const stale = await client.callTool({ name: 'review_ticket', arguments: { ticket_id: ticket.id, version: 1, submission_hash: submission.hash, decision: 'accept', reason: 'stale' } });
   assert.equal(stale.isError, true);
   const latest = current.submissions.at(-1);

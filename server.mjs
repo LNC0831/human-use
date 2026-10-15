@@ -159,8 +159,12 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
           return send(200, store[operation](id, body));
         }
       }
-      const attachmentMatch = /^\/api\/tickets\/(TK-\d{6,})\/attachments\/([a-f0-9-]+)$/.exec(path);
-      if (method === 'GET' && attachmentMatch) {
+      const attachmentMatch = /^\/api\/tickets\/(TK-\d{6,})\/attachments\/([a-f0-9-]+)(\/remove)?$/.exec(path);
+      if (method === 'POST' && attachmentMatch?.[3]) {
+        humanOnly();
+        return send(200, store.removeAttachment(attachmentMatch[1], attachmentMatch[2], await jsonBody(request)));
+      }
+      if (method === 'GET' && attachmentMatch && !attachmentMatch[3]) {
         const { metadata, bytes } = store.attachment(attachmentMatch[1], attachmentMatch[2]);
         const preview = previewTypes.has(metadata.mime) && url.searchParams.get('download') !== '1';
         response.setHeader('Content-Disposition', `${preview ? 'inline' : 'attachment'}; filename="attachment"; filename*=UTF-8''${encodeURIComponent(metadata.name).replace(/'/g, '%27')}`);

@@ -22,7 +22,7 @@ const icons = {
 const icon = name => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
 const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const statusNames = { pending: '待处理', submitted: '待验收', returned: '需补充', blocked: '无法完成', archived: '已归档', cancelled: '已取消' };
-const eventNames = { created: 'AI 发起工单', attachment_added: '上传附件', submitted: '提交完成', returned: 'AI 退回补充', accepted: 'AI 验收通过', archived: '工单归档', blocked: '报告无法完成', resumed: '恢复处理', cancelled: '取消工单' };
+const eventNames = { created: 'AI 发起工单', attachment_added: '上传附件', attachment_deleted: '删除未提交附件', attachment_removed: '附件移出本次提交', submitted: '提交完成', returned: 'AI 退回补充', accepted: 'AI 验收通过', archived: '工单归档', blocked: '报告无法完成', resumed: '恢复处理', cancelled: '取消工单' };
 const date = value => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 const badge = status => `<span class="badge ${status}">${statusNames[status]}</span>`;
 const canEdit = ticket => ['pending', 'returned', 'blocked'].includes(ticket.status);
@@ -126,10 +126,12 @@ function complete(unit, value) {
   return Array.isArray(value) && value.length > 0;
 }
 function attachmentList(ticket, unit, ids, editable) {
-  const attachments = ticket.attachments.filter(a => a.unit_id === unit.id && (editable || ids.includes(a.id)));
+  const attachments = ticket.attachments.filter(a => a.unit_id === unit.id && (ids.includes(a.id)
+    || (editable && !ticket.submissions.some(s => (s.answers[unit.id] || []).includes(a.id)))));
   return `<div class="attachment-list">${attachments.map(a => {
     const included = ids.includes(a.id), path = `/api/tickets/${ticket.id}/attachments/${a.id}`;
-    return `<div class="attachment">${['image/png','image/jpeg','image/webp','image/gif'].includes(a.mime) ? `<a href="${path}" target="_blank" rel="noopener"><img src="${path}" alt="${escape(a.name)}"></a>` : icon('file')}<div class="attachment-info"><a class="attachment-name" href="${path}?download=1">${escape(a.name)}</a><span class="small muted">${(a.size / 1024).toFixed(1)} KB${editable && !included ? ' · 未纳入本次提交' : ''}</span></div>${editable ? `<label class="attachment-actions"><input type="checkbox" data-attachment="${a.id}" data-unit="${unit.id}"${included ? ' checked' : ''} aria-label="将 ${escape(a.name)} 纳入本次提交"></label>` : ''}</div>`;
+    const retained = ticket.submissions.some(s => (s.answers[unit.id] || []).includes(a.id));
+    return `<div class="attachment">${['image/png','image/jpeg','image/webp','image/gif'].includes(a.mime) ? `<a href="${path}" target="_blank" rel="noopener"><img src="${path}" alt="${escape(a.name)}"></a>` : icon('file')}<div class="attachment-info"><a class="attachment-name" href="${path}?download=1">${escape(a.name)}</a><span class="small muted">${(a.size / 1024).toFixed(1)} KB${editable && !included ? ' · 未纳入本次提交' : ''}</span></div>${editable ? `<button type="button" class="attachment-remove" data-action="remove-attachment" data-attachment-id="${a.id}" data-retained="${retained}" aria-label="移除附件：${escape(a.name)}" title="${retained ? '移除附件，历史提交中的证据仍保留' : '删除附件'}"><span aria-hidden="true">×</span></button>` : ''}</div>`;
   }).join('')}</div>`;
 }
 function unitMarkup(ticket, unit, index) {
@@ -142,18 +144,19 @@ function unitMarkup(ticket, unit, index) {
     field = options.map(option => `<label class="check-option"><input type="${unit.type === 'choice' && !unit.multiple ? 'radio' : 'checkbox'}" name="unit-${unit.id}" data-answer="${unit.id}" value="${escape(option.id)}"${(value || []).includes(option.id) ? ' checked' : ''}${editable ? '' : ' disabled'}><span>${escape(option.label)}</span></label>`).join('');
   }
   if (unit.type === 'attachment') field = `${editable ? `<div class="upload-zone" tabindex="0" role="group" data-paste="${unit.id}" aria-label="${escape(unit.label)}：粘贴图片" aria-keyshortcuts="Control+V Meta+V">${icon('upload')}<span>点击此处，按 Ctrl+V 粘贴截图</span><button class="btn" type="button" data-action="choose-file" data-unit="${unit.id}">或选择图片、文件</button><small>图片支持预览 · 每个文件最大 20 MB</small></div><input class="visually-hidden" type="file" multiple id="file-${unit.id}" data-upload="${unit.id}">` : ''}${attachmentList(ticket, unit, value || [], editable)}`;
-  return `<section class="card unit"><div class="unit-header"><span class="unit-index">${String(index + 1).padStart(2, '0')}</span><div><h3>${escape(unit.label)}<span class="unit-required">${unit.required ? '必填' : '选填'}</span></h3>${unit.description ? `<p class="unit-description">${escape(unit.description)}</p>` : ''}</div></div>${field}</section>`;
+  const added = ticket.reviews.find(review => review.additional_units?.some(added => added.id === unit.id));
+  return `<section class="card unit"><div class="unit-header"><span class="unit-index">${String(index + 1).padStart(2, '0')}</span><div><h3>${escape(unit.label)}<span class="unit-required">${unit.required ? '必填' : '选填'}</span>${added ? `<span class="unit-supplement">第 ${added.version} 次提交后追加</span>` : ''}</h3>${unit.description ? `<p class="unit-description">${escape(unit.description)}</p>` : ''}</div></div>${field}</section>`;
 }
 function historyMarkup(ticket) {
   if (!ticket.submissions.length) return '';
-  return `<details class="history"><summary>提交与验收记录（${ticket.submissions.length} 次提交）</summary>${[...ticket.submissions].reverse().map(submission => `<div class="submission-card"><div class="card-heading"><h3>第 ${submission.version} 次提交</h3><span class="small muted">${date(submission.submitted_at)}</span></div><div class="submission-hash mono">SHA-256 · ${submission.hash}</div>${ticket.units.map(unit => {
+  return `<details class="history"><summary>提交与验收记录（${ticket.submissions.length} 次提交）</summary>${[...ticket.submissions].reverse().map(submission => `<div class="submission-card"><div class="card-heading"><h3>第 ${submission.version} 次提交</h3><span class="small muted">${date(submission.submitted_at)}</span></div><div class="submission-hash mono">SHA-256 · ${submission.hash}</div>${(submission.units || ticket.units.filter(unit => !ticket.reviews.some(review => review.version >= submission.version && review.additional_units?.some(added => added.id === unit.id)))).map(unit => {
     const answer = submission.answers[unit.id];
     let display;
     if (unit.type === 'attachment') display = attachmentList(ticket, unit, answer || [], false);
     else if (unit.type === 'checklist' || unit.type === 'choice') display = `<p>${escape((unit.type === 'checklist' ? unit.items : unit.options).filter(o => (answer || []).includes(o.id)).map(o => o.label).join('；') || '未填写')}</p>`;
     else display = `<p>${escape(answer ?? '未填写')}${unit.type === 'number' ? ' ' + escape(unit.unit || '') : ''}</p>`;
     return `<div class="history-answer"><strong>${escape(unit.label)}</strong>${display}</div>`;
-  }).join('')}${submission.note ? `<div class="history-answer"><strong>补充说明</strong><p>${escape(submission.note)}</p></div>` : ''}${ticket.reviews.filter(r => r.version === submission.version).map(review => `<div class="banner ${review.decision === 'accept' ? 'success' : ''}"><strong>${review.decision === 'accept' ? 'AI 验收通过' : 'AI 退回补充'}</strong>${escape(review.reason)}</div>`).join('')}</div>`).join('')}</details>`;
+  }).join('')}${submission.note ? `<div class="history-answer"><strong>补充说明</strong><p>${escape(submission.note)}</p></div>` : ''}${ticket.reviews.filter(r => r.version === submission.version).map(review => `<div class="banner ${review.decision === 'accept' ? 'success' : ''}"><strong>${review.decision === 'accept' ? 'AI 验收通过' : 'AI 退回补充'}</strong>${escape(review.reason)}${review.additional_units ? `<p>追加补充项：${review.additional_units.map(unit => escape(unit.label)).join('、')}</p>` : ''}</div>`).join('')}</div>`).join('')}</details>`;
 }
 function renderTicket() {
   const t = state.ticket, editable = canEdit(t), latestReview = t.reviews.at(-1);
@@ -182,7 +185,7 @@ function readForm() {
   const answers = {};
   for (const unit of state.ticket.units) {
     if (unit.type === 'attachment') {
-      answers[unit.id] = [...document.querySelectorAll('input[data-attachment]:checked')].filter(el => el.dataset.unit === unit.id).map(el => el.dataset.attachment);
+      answers[unit.id] = state.ticket.draft.answers[unit.id] || [];
     } else {
       const elements = [...document.querySelectorAll('[data-answer]')].filter(el => el.dataset.answer === unit.id);
       if (unit.type === 'text') answers[unit.id] = elements[0].value;
@@ -276,6 +279,12 @@ document.addEventListener('click', event => {
       await route(); toast('已更新');
     }
     if (action === 'save') { await saveDraft(); renderTicket(); toast('草稿已保存到本机'); }
+    if (action === 'remove-attachment') {
+      const retained = button.dataset.retained === 'true';
+      await saveDraft();
+      state.ticket = await api(`/api/tickets/${state.ticket.id}/attachments/${button.dataset.attachmentId}/remove`, { method: 'POST', body: { revision: state.ticket.revision } });
+      await refreshList(); renderTicket(); toast(retained ? '已移出本次提交，历史证据仍保留' : '附件已删除');
+    }
     if (action === 'submit') {
       await saveDraft();
       state.ticket = await api(`/api/tickets/${state.ticket.id}/submit`, { method: 'POST', body: { revision: state.ticket.revision } });

@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { EventEmitter } from 'node:events';
 import { randomUUID, randomBytes } from 'node:crypto';
-import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonical, sha256, createArchive, verifyArchive, zipArchive } from './archive.mjs';
 
@@ -22,9 +22,12 @@ function validateRequest(input) {
   requireCondition(text(input.title) && input.title.length <= 200, '标题必填，最多 200 字');
   requireCondition(typeof input.description === 'string' && typeof input.acceptance === 'string', 'description 和 acceptance 必须是文本');
   requireCondition(text(input.source) && text(input.request_key), 'source 和 request_key 必填');
-  requireCondition(Array.isArray(input.units) && input.units.length > 0, '至少需要一个任务单元');
-  const ids = new Set();
-  for (const unit of input.units) {
+  validateUnits(input.units);
+}
+
+function validateUnits(units, ids = new Set()) {
+  requireCondition(Array.isArray(units) && units.length > 0, '至少需要一个任务单元');
+  for (const unit of units) {
     requireCondition(isObject(unit) && typeof unit.id === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(unit.id) && !['__proto__', 'constructor', 'prototype'].includes(unit.id) && !ids.has(unit.id), '单元 ID 必须唯一且仅含字母、数字、下划线或连字符，不能使用对象保留键');
     ids.add(unit.id);
     requireCondition(types.includes(unit.type) && text(unit.label), '任务单元类型或标题无效');
@@ -294,6 +297,22 @@ export class Store extends EventEmitter {
     requireCondition(sha256(bytes) === metadata.sha256, '附件完整性校验失败，文件内容已改变', 409);
     return { metadata, bytes };
   }
+  removeAttachment(id, attachmentId, input) {
+    const ticket = this.get(id);
+    requireCondition(editable(ticket), '当前工单不可移除附件', 409);
+    this.checkRevision(ticket, input.revision);
+    const attachment = ticket.attachments.find(a => a.id === attachmentId);
+    requireCondition(attachment, '附件不存在', 404);
+    const retained = ticket.submissions.some(s => (s.answers[attachment.unit_id] || []).includes(attachmentId));
+    ticket.draft.answers[attachment.unit_id] = (ticket.draft.answers[attachment.unit_id] || []).filter(id => id !== attachmentId);
+    if (!retained) ticket.attachments = ticket.attachments.filter(a => a.id !== attachmentId);
+    this.event(ticket, retained ? 'attachment_removed' : 'attachment_deleted', 'human', { attachment_id: attachmentId });
+    return this.transaction(() => {
+      this.save(ticket);
+      if (!retained) unlinkSync(join(this.attachmentsRoot, attachmentId));
+      return ticket;
+    });
+  }
   submit(id, input) {
     const ticket = this.get(id);
     requireCondition(editable(ticket), '当前工单不可提交', 409);
@@ -302,7 +321,7 @@ export class Store extends EventEmitter {
     for (const unit of ticket.units.filter(u => u.type === 'attachment')) {
       for (const attachmentId of ticket.draft.answers[unit.id] || []) this.attachment(id, attachmentId);
     }
-    const body = { version: ticket.submissions.length + 1, submitted_at: now(), answers: ticket.draft.answers, note: ticket.draft.note };
+    const body = { version: ticket.submissions.length + 1, submitted_at: now(), units: structuredClone(ticket.units), answers: ticket.draft.answers, note: ticket.draft.note };
     ticket.submissions.push({ ...body, hash: sha256(canonical(body)) });
     ticket.status = 'submitted';
     ticket.draft.blocked_reason = '';
@@ -333,10 +352,16 @@ export class Store extends EventEmitter {
     requireCondition(input.version === submission.version && input.submission_hash === submission.hash, '提交版本或哈希已过期，请重新读取工单', 409);
     requireCondition(['accept', 'return'].includes(input.decision), 'decision 需要 accept 或 return');
     requireCondition(text(input.reason), '验收必须填写理由');
+    if (input.additional_units !== undefined) {
+      requireCondition(input.decision === 'return', '只有退回时可以追加补充任务单元');
+      validateUnits(input.additional_units, new Set(ticket.units.map(unit => unit.id)));
+    }
     const time = now();
-    ticket.reviews.push({ version: submission.version, submission_hash: submission.hash, decision: input.decision, reason: input.reason, at: time, actor: 'agent' });
+    ticket.reviews.push({ version: submission.version, submission_hash: submission.hash, decision: input.decision, reason: input.reason, at: time, actor: 'agent',
+      ...(input.additional_units !== undefined ? { additional_units: input.additional_units } : {}) });
     this.event(ticket, input.decision === 'accept' ? 'accepted' : 'returned', 'agent', { version: submission.version, reason: input.reason });
     if (input.decision === 'return') {
+      if (input.additional_units) ticket.units.push(...input.additional_units);
       ticket.status = 'returned';
       return this.save(ticket);
     }

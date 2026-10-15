@@ -43,6 +43,8 @@ Inspect saved images using the client's image viewer and other files using suita
 
 Write a review JSON file with the latest `version`, `submission_hash`, `decision` (`accept` or `return`) and a concrete `reason`. Run `POST /api/tickets/{id}/review`. Return incomplete work with actionable requests. Accept only after evaluating the stated criteria. On HTTP 409, re-read the work order and evaluate the new state; do not blindly replay a review.
 
+When returning work needs new inputs, optionally include `additional_units`: a nonempty array using the same unit schema as creation, with fresh IDs. The API and MCP `review_ticket` append those controls for the next human submission; they cannot replace existing units. Read `submission.units` to assess the requirements frozen for that submission. Older snapshots lack this field; use the original units and exclude additions recorded by reviews of that version or later. Never apply a newly added requirement to an earlier snapshot. The person can delete never-submitted uploads or remove historical attachments from the next submission; the AI must not perform these human actions.
+
 Acceptance freezes a package and returns `archive_hash`. Verify it with `GET /api/archives/{hash}`; download via `GET /api/archives/{hash}/download --out <package.zip>` when requested. Read receipts and AI activity notices do not alter frozen evidence.
 
 To show an actual intermediate AI result in the browser, post `activity` with a supported type, a short message and a stable `external_id`. A `turn_finished` notice means only that a turn ended; it does not mean the work passed acceptance.

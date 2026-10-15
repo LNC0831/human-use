@@ -18,6 +18,7 @@ CLI 项目服务的端口自动分配，通过 human-use status 查看，或用 
 | choice | options: [{id,label}]、multiple 布尔值 | 选中的 option ID 数组；单选最多一个 |
 | attachment | 无 | 属于该单元的附件 ID 数组 |
 
+
 `GET /api/tickets` 返回 `{tickets:[摘要...]}`，可带 status、source、q、binding_id 查询参数。status 是 pending、submitted、returned、blocked、archived、cancelled 之一。q 匹配标题、来源、工单 ID 和归档哈希。查询结果按工单创建顺序倒序。
 
 `GET /api/tickets/{id}` 返回完整工单，包括 units、draft、attachments、submissions、reviews、events、revision、archive_hash，另有 unread_count、last_event_id 和 activity。业务 events 属于归档历史；activity 是独立全局通知。使用返回的 url 或 `/#ticket/{id}` 打开网页。请求来源和 request_key 可关联原 AI 任务。
@@ -50,6 +51,23 @@ node tools/bridge.mjs POST /api/tickets/TK-000001/review review.json
 
 decision 为 accept 或 return。两者都必须有非空 reason。只有 submitted 状态可以验收，版本和哈希必须同时匹配最新提交。return 保留提交并允许补充；accept 冻结工单、生成归档包，响应完整工单包含 archive_hash。重复或过期验收返回 409，调用方应读取现状后决定下一步，不要盲目重试。
 
+退回时可选 `additional_units`，使用与创建工单相同的单元结构，ID 必须与原有单元及本批次中的其他单元不同。例如：
+
+```json
+{
+  "version": 1,
+  "submission_hash": "替换为最新提交的完整哈希",
+  "decision": "return",
+  "reason": "请补充设备型号和能看清接口的近照。",
+  "additional_units": [
+    { "id": "model", "type": "text", "label": "设备型号", "required": true },
+    { "id": "closeup", "type": "attachment", "label": "接口近照", "required": true }
+  ]
+}
+```
+
+补充项追加在原单元之后，并记录在对应 review 中；不修改原控件或历史提交。下一次人工提交需要完成所有必填项，快照中的 `units` 保存该次实际要求并参与哈希。`additional_units` 若提供则不能为空，accept 不允许携带该字段。API 与 MCP 的 `review_ticket` 使用相同字段。
+
 `POST /api/tickets/{id}/cancel` 请求 `{revision,reason}`，允许取消未归档且未取消的工单，保留取消事件。已归档工单不允许取消或重开。
 
 ## 归档
@@ -63,7 +81,7 @@ node tools/bridge.mjs GET /api/archives/完整哈希
 node tools/bridge.mjs GET /api/archives/完整哈希/download --out workorder.zip
 ```
 
-ZIP 包含 ticket.json、submissions/{版本}.json、attachments/{附件ID}、reviews.json、events.json、manifest.json。ticket.json 内保留附件 ID 与原文件名映射。归档包含本工单全部已上传附件，包含后来未勾选纳入最新提交的文件，用于保留过程证据；每次提交中的 answers 决定该版本实际引用的附件。
+ZIP 包含 ticket.json、submissions/{版本}.json、attachments/{附件ID}、reviews.json、events.json、manifest.json。ticket.json 内保留附件 ID 与原文件名映射。归档包含本工单尚未删除的全部附件，包括后来未纳入最新提交的文件；每次提交中的 answers 决定该版本实际引用的附件。已被历史提交引用的附件不能物理删除。未提交的误传文件可由人删除，删除后不进入归档。
 
 清单列出除自身之外的全部文件，按路径字典序排列。JSON 的对象键递归按字典序排序，数组维持业务顺序，使用两个空格缩进及一个末尾 LF，再以 UTF-8 写入。根哈希不写回清单，避免循环计算。验证时检查清单哈希、所有文件哈希和字节数，并拒绝额外文件。
 
@@ -75,12 +93,15 @@ ZIP 包含 ticket.json、submissions/{版本}.json、attachments/{附件ID}、re
 | --- | --- |
 | POST /api/tickets/{id}/draft | `{revision,answers,note}`，保存整份草稿 |
 | POST /api/tickets/{id}/attachments?unit_id=...&name=...&revision=... | 原始文件字节，Content-Type 为文件类型，上限 20 MiB；自动加入该单元的草稿答案 |
+| POST /api/tickets/{id}/attachments/{attachment_id}/remove | `{revision}`；从未被提交引用的附件会删除文件和元数据；历史引用的附件只从当前草稿移除，原文件及历史提交保留 |
 | POST /api/tickets/{id}/submit | `{revision}`，检查必填并冻结提交快照 |
 | POST /api/tickets/{id}/block | `{revision,reason}`，无需填满必填项 |
 | POST /api/tickets/{id}/resume | `{revision}`，恢复为待处理或需补充 |
 | POST /api/demo | 无请求体，显式创建一张演示工单 |
 
-人工提交快照包含 version、submitted_at、answers、note 和 hash；hash 是除 hash 字段外的固定序列化 JSON 的 SHA-256。附件的原始 SHA-256 在附件元数据中保存，提交前检查被引用的附件未改变。
+人工提交快照包含 version、submitted_at、units、answers、note 和 hash；hash 是除 hash 字段外的固定序列化 JSON 的 SHA-256。旧版没有 units 的提交维持原内容和哈希，不回填、不重算。附件的原始 SHA-256 在附件元数据中保存，提交前检查被引用的附件未改变。
+
+附件上传后默认随本次提交，不再显示勾选框。编辑状态下点击附件右上角“×”，会立即保存当前草稿并调用移除接口；从未被历史提交引用的附件会真正删除，已被引用的附件从当前列表移除，仍可在历史提交中查看。已提交、已归档或已取消状态不显示移除按钮。
 
 ## 事件与已读（v0.2）
 

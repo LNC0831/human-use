@@ -93,6 +93,11 @@ human-use api GET /api/tickets/TK-000001
 An example request is in [examples/ticket.json](examples/ticket.json). Supported
 units are checklist, text, number, choice and attachment. Click an attachment
 area and press **Ctrl+V** to paste a screenshot, or select files normally.
+Uploads are included automatically; use the × in the top-right corner to remove
+an attachment. People can delete never-submitted uploads; files referenced by a historical
+submission remain available as evidence. A return review can append
+`additional_units` for new questions or uploads; each new submission freezes
+its own requirements alongside the answers.
 
 MCP uses the same API and exposes 10 tools, including original evidence reading,
 versioned review, bounded waits and explicit session bindings:

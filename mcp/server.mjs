@@ -43,8 +43,9 @@ tool('read_attachment', 'Read original attachment bytes with integrity checking.
   else content.push({ type: 'resource', resource: { uri: `human-use://tickets/${ticket_id}/attachments/${attachment_id}`, mimeType: metadata.mime, blob: data } });
   return { content };
 });
-tool('review_ticket', 'Accept or return the latest submitted snapshot after checking answers and evidence. Use its exact version and hash; a meaningful reason is required.', {
+tool('review_ticket', 'Accept or return the latest submitted snapshot after checking answers and evidence. Use its exact version and hash. With return, optionally append additional_units with fresh IDs for supplementary human inputs; existing requirements and submissions stay unchanged.', {
   ticket_id: id, version: z.number().int().positive(), submission_hash: z.string().regex(/^[a-f0-9]{64}$/), decision: z.enum(['accept', 'return']), reason: z.string().min(1),
+  additional_units: z.array(unit).min(1).optional(),
 }, false, async ({ ticket_id, ...body }) => asText(await client.json('POST', `/api/tickets/${ticket_id}/review`, body)));
 tool('cancel_ticket', 'Cancel an unfinished request with a reason and the current revision.', {
   ticket_id: id, revision: z.number().int(), reason: z.string().min(1),
