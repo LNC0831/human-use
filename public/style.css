@@ -232,6 +232,8 @@ h3 {
   background:#fafbf8
 }
 .breadcrumb {
+  min-width:0;
+  overflow:hidden;
   display:flex;
   align-items:center;
   gap:10px;
@@ -242,6 +244,16 @@ h3 {
   display:flex;
   align-items:center;
   gap:18px
+}
+#language {
+  padding:6px 9px;
+  font-size:12px;
+  max-width:130px
+}
+.breadcrumb>span {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap
 }
 .connection {
   font-size:11px;
@@ -391,9 +403,13 @@ h3 {
 .tabs {
   display:flex;
   gap:19px;
-  align-items:center
+  align-items:center;
+  min-width:0;
+  max-width:100%;
+  overflow-x:auto
 }
 .tab {
+  flex-shrink:0;
   padding:8px 0;
   border:0;
   background:none;
@@ -1270,9 +1286,10 @@ dialog label {
 @media(max-width:640px) {
   .attachment { flex-wrap:wrap }
   .shell {
-    grid-template-columns:1fr
+    grid-template-columns:minmax(0,1fr)
   }
   .sidebar {
+    min-width:0;
     position:relative;
     height:auto;
     padding:16px 18px;
@@ -1320,6 +1337,15 @@ dialog label {
   }
   .topbar-right .connection {
     display:none
+  }
+  .topbar-right {
+    gap:8px
+  }
+  .topbar-right .avatar {
+    display:none
+  }
+  .breadcrumb {
+    max-width:calc(100% - 125px)
   }
   .main {
     padding:24px 18px

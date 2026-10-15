@@ -19,7 +19,7 @@ try {
   const [packed] = await npmRun(['pack', '--ignore-scripts', '--pack-destination', root]);
   const paths = packed.files.map(f => f.path);
   for (const path of paths) assert.ok(!/(^|\/)(data|\.human-use|\.test-data|node_modules|\.git)(\/|$)|api-token$|\.(sqlite|db|zip|log|tgz)$/.test(path), `Private artifact in package: ${path}`);
-  for (const path of ['cli.mjs', 'server.mjs', 'public/app.js', 'lib/service.mjs', 'mcp/server.mjs', 'skills/human-use/SKILL.md', 'skills/human-use-setup/SKILL.md']) assert.ok(paths.includes(path), `Missing: ${path}`);
+  for (const path of ['cli.mjs', 'server.mjs', 'public/app.js', 'public/i18n.js', 'lib/service.mjs', 'mcp/server.mjs', 'skills/human-use/SKILL.md', 'skills/human-use-setup/SKILL.md']) assert.ok(paths.includes(path), `Missing: ${path}`);
   const tgz = join(root, packed.filename), prefix = join(root, 'installation with spaces');
   await npmRun(['install', '--global', '--prefix', prefix, tgz, '--ignore-scripts', '--no-audit', '--no-fund']);
   const pkg = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));

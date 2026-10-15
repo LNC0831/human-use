@@ -4,6 +4,8 @@ CLI 项目服务的端口自动分配，通过 human-use status 查看，或用 
 
 ## 创建与读取
 
+网页通过 `Accept-Language: zh-CN`、`zh-TW` 或 `en` 选择错误提示及归档校验说明的语言。不传此头或值不在上述三项时沿用简体中文。此设置不翻译工单正文、回答、AI 消息或证据，不改变状态值、字段名及归档内容。
+
 `POST /api/tickets`，请求例见 [examples/ticket.json](../examples/ticket.json)。
 
 可选 binding_id 关联已登记会话，服务会检查绑定存在。必填字段为 title、description、acceptance、source、request_key、units。description 和 acceptance 可以是空字符串；其余文本必填。source 与 request_key 组合是幂等键，相同键和相同请求返回原工单（200），不同内容返回 409。新工单返回 201，响应包含 `{created, ticket, url}`。

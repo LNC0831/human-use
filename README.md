@@ -9,6 +9,11 @@ the checklist and supplies answers or files in a browser, and the agent reviews
 an explicit submission version and hash. Acceptance freezes a SHA-256-addressed
 package containing the evidence and workflow history.
 
+The interface supports Simplified Chinese, Traditional Chinese and English.
+Use the language selector at the top right; the browser remembers your choice.
+Work order content and evidence remain in their original language. Successful
+submissions return to the work order list; failed submissions stay open for correction.
+
 ## Install once, introduce it to any project
 
 Requires **Node.js 24+**. The npm release name and publishing account are being

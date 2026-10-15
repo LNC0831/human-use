@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { translate } from './public/i18n.js';
 
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export const canonical = value => JSON.stringify(sortKeys(value), null, 2) + '\n';
@@ -58,30 +59,31 @@ export function archiveFiles(folder, prefix = '') {
   }).sort();
 }
 
-export function verifyArchive(root, hash) {
+export function verifyArchive(root, hash, language = 'zh-CN') {
+  const tr = (key, values) => translate(language, key, values);
   const folder = join(root, hash);
   const errors = [];
   const manifestPath = join(folder, 'manifest.json');
-  if (!existsSync(manifestPath)) return { hash, valid: false, errors: ['缺少 manifest.json'] };
+  if (!existsSync(manifestPath)) return { hash, valid: false, errors: [tr('缺少 manifest.json')] };
   const bytes = readFileSync(manifestPath);
-  if (sha256(bytes) !== hash) return { hash, valid: false, errors: ['清单哈希与工单包标识不符'] };
+  if (sha256(bytes) !== hash) return { hash, valid: false, errors: [tr('清单哈希与工单包标识不符')] };
   const manifest = JSON.parse(bytes);
   const expected = new Set(['manifest.json']);
   for (const file of manifest.files) {
     // 清单是归档的外部读取边界；只允许包内相对路径。
     if (!/^(ticket\.json|reviews\.json|events\.json|submissions\/[1-9]\d*\.json|attachments\/[a-f0-9-]+)$/.test(file.path)) {
-      errors.push(`非法包内路径：${file.path}`);
+      errors.push(tr('非法包内路径：{path}', { path: file.path }));
       continue;
     }
     expected.add(file.path);
     const path = join(folder, file.path);
-    if (!existsSync(path)) errors.push(`缺少文件：${file.path}`);
+    if (!existsSync(path)) errors.push(tr('缺少文件：{path}', { path: file.path }));
     else {
       const content = readFileSync(path);
-      if (content.length !== file.size || sha256(content) !== file.sha256) errors.push(`文件内容不符：${file.path}`);
+      if (content.length !== file.size || sha256(content) !== file.sha256) errors.push(tr('文件内容不符：{path}', { path: file.path }));
     }
   }
-  for (const name of archiveFiles(folder)) if (!expected.has(name)) errors.push(`存在额外文件：${name}`);
+  for (const name of archiveFiles(folder)) if (!expected.has(name)) errors.push(tr('存在额外文件：{path}', { path: name }));
   return { hash, valid: errors.length === 0, errors, file_count: manifest.files.length };
 }
 

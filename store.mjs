@@ -4,12 +4,16 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { mkdirSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonical, sha256, createArchive, verifyArchive, zipArchive } from './archive.mjs';
+import { translate } from './public/i18n.js';
 
 export class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, key, values) {
+    super(translate('zh-CN', key, values));
+    this.status = status; this.key = key; this.values = values;
+  }
 }
-export function requireCondition(condition, message, status = 400) {
-  if (!condition) throw new HttpError(status, message);
+export function requireCondition(condition, key, status = 400, values) {
+  if (!condition) throw new HttpError(status, key, values);
 }
 const now = () => new Date().toISOString();
 const editable = ticket => ['pending', 'returned', 'blocked'].includes(ticket.status);
@@ -53,17 +57,17 @@ function validateAnswers(ticket, answers, submitting) {
   const units = new Map(ticket.units.map(unit => [unit.id, unit]));
   for (const [id, value] of Object.entries(answers)) {
     const unit = units.get(id);
-    requireCondition(unit, `未知任务单元：${id}`);
-    if (unit.type === 'text') requireCondition(typeof value === 'string', `${unit.label} 需要文本`);
-    else if (unit.type === 'timestamp') requireCondition(value === '' || isTimestamp(value), `${unit.label} 需要有效的 UTC ISO 时间戳`);
-    else if (unit.type === 'number') requireCondition(value === null || (typeof value === 'number' && Number.isFinite(value)), `${unit.label} 需要数值`);
+    requireCondition(unit, '未知任务单元：{id}', 400, { id });
+    if (unit.type === 'text') requireCondition(typeof value === 'string', '{label} 需要文本', 400, { label: unit.label });
+    else if (unit.type === 'timestamp') requireCondition(value === '' || isTimestamp(value), '{label} 需要有效的 UTC ISO 时间戳', 400, { label: unit.label });
+    else if (unit.type === 'number') requireCondition(value === null || (typeof value === 'number' && Number.isFinite(value)), '{label} 需要数值', 400, { label: unit.label });
     else {
-      requireCondition(Array.isArray(value) && value.every(v => typeof v === 'string') && new Set(value).size === value.length, `${unit.label} 需要无重复的 ID 数组`);
+      requireCondition(Array.isArray(value) && value.every(v => typeof v === 'string') && new Set(value).size === value.length, '{label} 需要无重复的 ID 数组', 400, { label: unit.label });
       const allowed = unit.type === 'attachment'
         ? ticket.attachments.filter(a => a.unit_id === id).map(a => a.id)
         : (unit.type === 'checklist' ? unit.items : unit.options).map(o => o.id);
-      requireCondition(value.every(v => allowed.includes(v)), `${unit.label} 包含无效选项或附件`);
-      if (unit.type === 'choice' && !unit.multiple) requireCondition(value.length <= 1, `${unit.label} 只能单选`);
+      requireCondition(value.every(v => allowed.includes(v)), '{label} 包含无效选项或附件', 400, { label: unit.label });
+      if (unit.type === 'choice' && !unit.multiple) requireCondition(value.length <= 1, '{label} 只能单选', 400, { label: unit.label });
     }
   }
   if (!submitting) return;
@@ -74,7 +78,7 @@ function validateAnswers(ticket, answers, submitting) {
     else if (unit.type === 'number') complete = typeof value === 'number' && Number.isFinite(value);
     else if (unit.type === 'checklist') complete = Array.isArray(value) && value.length === unit.items.length;
     else complete = Array.isArray(value) && value.length > 0;
-    requireCondition(complete, `请完成必填项：${unit.label}`, 422);
+    requireCondition(complete, '请完成必填项：{label}', 422, { label: unit.label });
   }
 }
 
@@ -381,20 +385,20 @@ export class Store extends EventEmitter {
     this.event(ticket, 'cancelled', 'agent', { reason: input.reason });
     return this.save(ticket);
   }
-  archive(hash) {
+  archive(hash, language = 'zh-CN') {
     requireCondition(/^[a-f0-9]{64}$/.test(hash), '需要完整的 SHA-256 哈希');
     const folder = join(this.archivesRoot, hash);
     requireCondition(existsSync(folder), '归档包不存在', 404);
-    return { folder, verification: verifyArchive(this.archivesRoot, hash) };
+    return { folder, verification: verifyArchive(this.archivesRoot, hash, language) };
   }
-  archiveInfo(hash) {
-    const { folder, verification } = this.archive(hash);
+  archiveInfo(hash, language = 'zh-CN') {
+    const { folder, verification } = this.archive(hash, language);
     // 校验失败时不把被修改的 JSON 当作可信业务数据返回。
     return { ...verification, ticket: verification.valid ? JSON.parse(readFileSync(join(folder, 'ticket.json'), 'utf8')) : null };
   }
-  exportArchive(hash) {
-    const { folder, verification } = this.archive(hash);
-    requireCondition(verification.valid, `归档校验失败：${verification.errors.join('；')}`, 409);
+  exportArchive(hash, language = 'zh-CN') {
+    const { folder, verification } = this.archive(hash, language);
+    requireCondition(verification.valid, '归档校验失败：{errors}', 409, { errors: verification.errors.join('；') });
     return zipArchive(folder);
   }
 }

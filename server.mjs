@@ -6,6 +6,7 @@ import { resolve, join } from 'node:path';
 import { Store, HttpError, requireCondition } from './store.mjs';
 import { loadProject } from './lib/project.mjs';
 import { version } from './lib/version.mjs';
+import { languages, translate } from './public/i18n.js';
 
 const publicRoot = fileURLToPath(new URL('./public/', import.meta.url));
 export const MAX_UPLOAD = 20 * 1024 * 1024;
@@ -19,7 +20,7 @@ async function readBody(request, limit) {
     length += chunk.length;
     if (length > limit) {
       request.resume();
-      throw new HttpError(413, `请求超过 ${Math.floor(limit / 1024 / 1024)} MiB 上限`);
+      throw new HttpError(413, '请求超过 {limit} MiB 上限', { limit: Math.floor(limit / 1024 / 1024) });
     }
     chunks.push(chunk);
   }
@@ -41,6 +42,7 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
   const cookieName = project ? `human_use_${session.slice(0, 16)}` : 'workorder_session';
   const streams = new Set();
   const server = createServer(async (request, response) => {
+    const language = languages.includes(request.headers['accept-language']) ? request.headers['accept-language'] : 'zh-CN';
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('Cache-Control', 'no-store');
@@ -57,7 +59,7 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
       requireCondition(!request.headers.origin || request.headers.origin === `http://${host}`, '不允许跨域请求', 403);
       requireCondition(!['cross-site', 'same-site'].includes(request.headers['sec-fetch-site']), '不允许跨站请求', 403);
       const url = new URL(request.url, `http://${host}`), path = url.pathname, method = request.method;
-      const assets = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
+      const assets = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/i18n.js': ['i18n.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
       if (method === 'GET' && assets[path]) {
         if (path === '/') response.setHeader('Set-Cookie', `${cookieName}=${session}; HttpOnly; SameSite=Strict; Path=/`);
         return send(200, readFileSync(join(publicRoot, assets[path][0])), assets[path][1]);
@@ -174,9 +176,9 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
       const archiveMatch = /^\/api\/archives\/([a-f0-9]{64})(?:\/(verify|download))?$/.exec(path);
       if (archiveMatch) {
         const [, hash, action] = archiveMatch;
-        if (method === 'GET' && (!action || action === 'verify')) return send(200, store.archiveInfo(hash));
+        if (method === 'GET' && (!action || action === 'verify')) return send(200, store.archiveInfo(hash, language));
         if (method === 'GET' && action === 'download') {
-          const bytes = store.exportArchive(hash);
+          const bytes = store.exportArchive(hash, language);
           response.setHeader('Content-Disposition', `attachment; filename="${hash}.zip"`);
           return send(200, bytes, 'application/zip');
         }
@@ -184,7 +186,7 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
       throw new HttpError(404, '接口不存在');
     } catch (error) {
       if (!(error instanceof HttpError)) console.error(error);
-      if (!response.headersSent && !response.destroyed) send(error.status || 500, { error: error instanceof HttpError ? error.message : '本机服务发生错误，请查看终端日志' });
+      if (!response.headersSent && !response.destroyed) send(error.status || 500, { error: error instanceof HttpError ? translate(language, error.key, error.values) : translate(language, '本机服务发生错误，请查看终端日志') });
     }
   });
   const close = callback => { for (const stream of streams) stream.end(); server.close(callback); server.closeAllConnections(); };
