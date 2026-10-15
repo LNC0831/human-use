@@ -15,9 +15,37 @@ For a manually copied standalone skill with an explicitly configured v0.2 servic
 
 If MCP is already connected, its equivalent Human Use tools can be used instead. The workflow and acceptance requirements are the same. API details and JSON examples are in [references/api.md](references/api.md).
 
+## Choose controls to match the task
+
+Use the smallest set of controls that captures the missing human action or observation. Prefer a suitable structured control over making the person type a structured answer into a text box. Do not add every available type, repeat known information, or require a screenshot and a transcription of everything in it without a separate need.
+
+The complete catalogue for the bundled server is:
+
+| Type | Use it for | Contract and important limits |
+| --- | --- | --- |
+| `checklist` | A sequence of actions the person can actually complete | `items: [{id,label}]`; a required checklist requires **every** item. Use action labels, not outcomes such as “everything works”. |
+| `text` | An explanation, exact message, version or identifier | String answer. Keep identifiers with leading zeroes as text; ask a focused question rather than “provide details”. |
+| `number` | One measurement or count | Optional `unit` such as `ms` or `条`; numeric answer, including zero. Put relevant units and interpretation in the instructions; no min/max enforcement is provided. |
+| `timestamp` | When an operation happened | Manually editable local date/time with **Get Time**; answers use UTC ISO strings. It is the person's editable record, not certified time. |
+| `choice` | One outcome, or several applicable observations | `options: [{id,label}]` and `multiple: false` for single select or `true` for multiple select. Include failure/unknown outcomes when valid; do not force a positive answer. |
+| `attachment` | An original screenshot, photo, log or other file needed for review | File-ID array. Images can be pasted; uploads are limited to 20 MiB per file. Describe what must be visible or which file is needed. |
+
+Every unit needs `id`, `type`, `label`, and boolean `required`; `description` supplies local instructions. Mark a unit required only when the task cannot be assessed without that answer. Use the user’s language for visible text and stable ASCII IDs for the API. These are the available types, not a requirement to use them all. Unsupported fields cannot add new UI behavior. Keep the Skill and running service from a compatible build; a rejected type or field is a capability mismatch to report, not a reason to silently lose the requested input.
+
+## Write an understandable work order
+
+For drafting or returning a request, use the relevant patterns in [references/authoring.md](references/authoring.md). Before creating it, check:
+
+- State the concrete goal and name the target page, object or location. Supply known context instead of asking the person to reconstruct the chat or inventing a missing address, threshold or prerequisite.
+- Give ordered, observable actions in familiar words. Name actual UI labels; explain necessary jargon. Keep one clear action or tightly related operation per step, using `description` for context and unit labels for the requested answer.
+- Say what to return and what makes it usable: the measurement and unit, an exact message, or a screenshot region with enough context. Keep hints short; examples illustrate format and must not imply the answer has already been observed.
+- Distinguish completing the requested check from getting the hoped-for result. Record actual negative results too. If the person cannot act or observe, use the existing blocked path; never make them tick a success statement or invent a value to satisfy a required field.
+- Keep the effort proportional. Use the existing optional submission note for incidental comments. Split unrelated goals when they would otherwise make a confusing work order, and avoid repeat uploads or redo requests when earlier evidence is sufficient.
+- Make acceptance match what was requested. On return, identify the specific missing information, explain the next action, and append only needed new controls; do not retroactively judge an old snapshot against new requirements.
+
 ## Hand off work
 
-Explain the required action and acceptance criteria. Choose checklist, text, number, timestamp, choice or attachment units according to what the person needs to supply. A timestamp lets the person record an operation time manually or with Get Time; it is not an authenticated time source. Write a JSON request file, then run:
+Write the work order as a JSON request file using the control and writing rules above, then run:
 
 ```sh
 node <skill-directory>/scripts/cli.mjs api POST /api/tickets <request.json> --project <project-root>

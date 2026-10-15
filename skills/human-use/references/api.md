@@ -1,5 +1,7 @@
 # HTTP examples
 
+For choosing controls and writing readable human instructions, use [authoring.md](authoring.md). This file covers API payloads and calls.
+
 Pass every JSON body as a UTF-8 file to `node <skill-directory>/scripts/api.mjs POST <path> <file.json>`. GET responses print JSON; binary downloads require `--out <filename>`. Errors exit nonzero. No credentials are printed.
 
 Create (`POST /api/tickets`):
