@@ -2,69 +2,70 @@
 
 **把 AI 需要人完成的一步，变成有结果、有证据的工单。**
 
-[English](README.md) · [API 文档](docs/API.md) · [贡献指南](CONTRIBUTING.md) · [MIT 许可证](LICENSE)
+[English](README.md) · [接入指南](docs/接入指南.md) · [部署与发布](docs/部署与发布.md) · [API](docs/API.md) · [MIT](LICENSE)
 
-AI 创建工单，人通过本机网页完成操作并提供证据，AI 验收后生成带 SHA-256 的完整工单包。数据保存在本机，支持退回补交、附件预览、归档检索、完整性校验与 ZIP 导出。
+软件安装一次，每个项目分别初始化、启动和保存数据。AI 发起工单，人通过本机网页勾选 checklist、填写回答、粘贴截图或上传文件；AI 按提交版本与哈希验收，完成后形成可校验、可导出的归档包。
 
-## 启动
+## 安装与引入项目
 
-需要 Node.js 24 或更新版本。核心服务与 Skill 仅依赖 Node 内置模块，无需构建。使用 MCP 或运行完整测试前，先执行 `npm ci --ignore-scripts`。在项目目录运行：
-
-```powershell
-npm start
-```
-
-打开 http://127.0.0.1:4317。保持服务进程运行；在终端按 Ctrl+C 停止。首次启动是空工作空间，可在页面明确点击“新建示例”体验任务单元。
-
-如端口被占用，使用 `$env:PORT = '4318'` 后启动。可用 `$env:WORKORDER_DATA_DIR = Join-Path $env:LOCALAPPDATA 'HumanUse'` 指定其他本地数据目录。CLI 调用与服务使用同样的环境变量。自定义数据目录应放在仓库目录之外。
-
-## AI 接入
-
-启动服务后，在项目根目录运行：
+需要 **Node.js 24+**。正式 npm 包名与发布账号尚待确认，目前未发布到 registry。可先在源码仓库生成安装包试用：
 
 ```powershell
-node tools/bridge.mjs POST /api/tickets examples/ticket.json
-node tools/bridge.mjs GET /api/tickets?status=submitted
-node tools/bridge.mjs GET /api/tickets/TK-000001
+npm ci --ignore-scripts
+npm pack
+npm install -g ./human-use-0.3.0.tgz
+human-use setup codex
 ```
 
-Bridge 自动读取数据目录中的 api-token，不在日志中输出凭证。AI 也可直接调用 HTTP API，使用 Bearer token。完整契约与验收示例见 [API 文档](docs/API.md)。现在可选择 **[Skill + API](skills/human-use/SKILL.md)** 或 **stdio MCP**：Skill 可独立复制使用，无需 MCP；MCP 提供建单、证据读取、版本验收、归档及事件工具。配置、hook 与会话绑定见 **[接入指南](docs/接入指南.md)**。
+setup 安装用户级初始化与协作 Skill；同名非本工具管理的 Skill 会报错，不覆盖。必要时新开 Codex 会话，然后在任意项目说：**“给当前项目引入 Human Use。”** AI 调用 CLI 完成配置，立即启动后台服务并打开页面。也可手动执行：
 
-## 使用流程
+```powershell
+human-use init --project E:/your-project
+```
 
-1. AI 建单，说明目的、验收标准及所需的任务单元，取得 ID 和本机链接。
-2. 人填写 checklist、文本、数值、选项并上传文件，保存草稿或报告无法完成。
-3. 人点击“提交完成”，软件冻结该次提交及其哈希，等待 AI 验收。
-4. AI 读取回答和所需附件，对明确的提交版本验收。退回须说明原因，补交产生新版本。
-5. AI 验收通过后形成归档包，可按完整哈希查找、校验、导出 ZIP。
+默认生成 Codex 项目 hooks，但仍需要客户端信任和重新加载。`--no-hooks` 只使用 Skill + API；`--no-open` 不打开浏览器；`--client claude` 生成 Claude 项目 hooks。普通文件夹也可使用，worktree 共享留待后续。
 
-页面通过 SSE 实时更新，保存未读状态；编辑时保留未保存输入并提示有更新。可选 hook 把人工提交回传给明确绑定的会话，也可显示 AI 动作。Codex 采用限时 Stop 等待及下一轮补读，Claude 另有实验 asyncRewake 配置，具体能力取决于客户端。推广和分发暂不推进。
+## 数据与服务
 
-## 数据与边界
+项目配置位于 human-use.json，工单、原图、归档、凭证和运行信息位于项目私有的 `.human-use/`。初始化只在 AGENTS.md 和 .gitignore 合并管理片段，保留原内容。不会把整套程序复制到项目，也不要求在项目里 npm install。
 
-默认 data/ 保存 SQLite、附件、归档及 API 凭证。停止服务后复制整个数据目录即可备份；备份包含凭证，应按本机私有数据保管。API 凭证不应提交到版本库。
+各项目使用独立后台进程与凭证，端口由系统分配。CLI 自动查找服务和 token；重复初始化、重复启动复用已有实例，未读状态和证据不丢失。可在项目内运行，或传入 `--project`：
 
-仅监听 127.0.0.1，不接受远程或跨域调用。网页代表本机操作者，Bearer API 代表接入代理，属于单用户协作约定，不提供人员身份、物理操作或签名证明。文字按文本展示，上传内容不会被执行。
+```powershell
+human-use status
+human-use stop
+human-use start
+human-use open
+```
 
-图片上传区支持直接粘贴截图：截图复制到剪贴板后，点击对应单元的上传区，按 Ctrl+V，即会保存并预览；也可继续选择本机文件上传。普通文本框仍按通常方式粘贴文字。
+关闭页面或 Codex 不停止服务。更新软件前先停止相关项目，更新后重新 setup codex 并 start。卸载软件保留项目数据。没有系统自启动或运行中热更新。
 
-图片支持 PNG、JPEG、WebP、GIF 预览，其他文件以下载方式读取，单文件不超过 20 MiB。无录音转写、云服务、遥测、外部 CDN、手机访问或多人权限。云端 AI 客户端读取工单后，内容可能发送给其模型；应用本地存储不等于模型在本地运行。
+迁移旧版数据时，先停旧服务，再执行 `human-use migrate --from E:/old/data --project E:/your-project`，然后 init。目标必须为空；源保留，归档哈希不变，目标生成独立凭证。完整说明见 [部署与发布](docs/部署与发布.md)。
 
-归档标识为 manifest.json 字节的 SHA-256。清单记录全部业务文件的路径、大小和哈希，导出 ZIP 的容器元数据不参与内容标识。页面校验失败时拒绝导出被修改的归档。
+## AI 接入与闭环
 
-## 开发
+默认 **Skill + API**，MCP 可选：
 
-遵守 [AGENTS.md 中的开发纪律](AGENTS.md)。冻结开发基线见 [首版方案](docs/方案-v1.md)。
+```powershell
+human-use api POST /api/tickets E:/requests/ticket.json
+human-use api GET /api/tickets?status=submitted
+human-use integrate codex --mcp
+```
+
+MCP stdio 入口是 `human-use mcp`，支持 10 个工具，复用同一 API。AI 必须读取实际回答及相关原始附件，以最新 version 和 submission_hash 验收；不能代替人勾选或提交。退回保留记录，补交形成新版本。[接入指南](docs/接入指南.md)包含调用和 hook 边界。
+
+图片单元支持 Ctrl+V 直接粘贴截图，也可选文件。页面通过 SSE 实时提醒、保存未读，并在更新到来时保留未保存输入。hook 可以把提交事件交给明确绑定的会话；完全空闲时能否继续执行取决于客户端，Claude asyncRewake 示例仍标为实验。
+
+数据不上传云端，无遥测、外部 CDN 或远程访问。接入云端模型后，它读取的内容可能发送给模型提供者。仅监听 127.0.0.1，单文件最多 20 MiB。哈希用于检查内容一致性，不证明物理操作或个人身份。见 [SECURITY.md](SECURITY.md)。
+
+## 开发与发行
 
 ```powershell
 npm ci --ignore-scripts
 npm test
+npm run test:package
 ```
 
-测试使用 Node.js 内置测试器，覆盖完整闭环、提交快照、过期验收、草稿冲突、证据修改、重启持久化、HTTP 访问边界、ZIP、持久化事件、SSE 补读、独立 Skill、真实 MCP stdio 与 hook 路由。Windows 受限沙箱可能阻止回环连接或目录重命名，需在普通本机终端运行这些检查。
+CI 配置 Windows / Linux 测试，并把真实 npm 包安装到仓库外验证 CLI、Skill、两个项目、人工提交、归档、重启和 MCP。tag 触发检查与 Draft Release；维护者检查公开后，再手动触发 npm 发布。账号、包名和 GitHub 仓库确认前保留 private:true，不会误发布。
 
-GitHub CI 配置了 Node.js 24 的 Windows 与 Linux 测试。欢迎用中文或英文提交 Issue 和 PR，详见 [贡献指南](CONTRIBUTING.md)。安全边界与漏洞报告方式见 [SECURITY.md](SECURITY.md)。
-
-## 许可证
-
-[MIT](LICENSE)，版权归 2026 Human Use contributors。
+推广和插件市场暂缓。开发遵守 [AGENTS.md](AGENTS.md)，发行规则见 [部署与发布](docs/部署与发布.md)。原有 `npm start` 作为独立源码运行方式保留，默认 data/ 和 4317；不要让它与 CLI 服务同时打开同一数据库。

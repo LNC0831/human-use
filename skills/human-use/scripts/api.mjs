@@ -2,13 +2,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export function createClient({ defaultDataDir } = {}) {
-  const base = new URL(process.env.HUMAN_USE_URL || `http://127.0.0.1:${process.env.PORT || 4317}`);
+export function createClient({ defaultDataDir, url, tokenFile } = {}) {
+  const base = new URL(url || process.env.HUMAN_USE_URL || `http://127.0.0.1:${process.env.PORT || 4317}`);
   if (base.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(base.hostname) || base.username || base.password || base.pathname !== '/') {
     throw new Error('HUMAN_USE_URL must be a loopback HTTP origin, e.g. http://127.0.0.1:4317');
   }
   const dataDir = process.env.WORKORDER_DATA_DIR || defaultDataDir;
-  const tokenFile = process.env.HUMAN_USE_TOKEN_FILE || (dataDir && join(dataDir, 'api-token'));
+  tokenFile ||= process.env.HUMAN_USE_TOKEN_FILE || (dataDir && join(dataDir, 'api-token'));
   if (!tokenFile) throw new Error('Set HUMAN_USE_TOKEN_FILE to the absolute path of the running service’s data/api-token file.');
   const token = readFileSync(resolve(tokenFile), 'utf8').trim();
   async function request(method, path, body, { signal } = {}) {
@@ -36,7 +36,7 @@ export async function main(args = process.argv.slice(2), options) {
   if (outIndex >= 0 && !outPath) throw new Error('--out requires a filename');
   const inputPath = rest[0] && rest[0] !== '--out' ? rest[0] : null;
   const body = inputPath ? JSON.parse(readFileSync(inputPath, 'utf8').replace(/^\uFEFF/, '')) : undefined;
-  const response = await createClient(options).request(method, path, body);
+  const response = await (options?.client || createClient(options)).request(method, path, body);
   if (outPath) {
     writeFileSync(resolve(outPath), Buffer.from(await response.arrayBuffer()));
     console.log(`Saved: ${resolve(outPath)}`);

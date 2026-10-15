@@ -1,5 +1,8 @@
 # Local work orders, evidence and backups (including custom data directories)
 /data/
+**/.human-use/
+/.release/
+*.tgz
 **/attachments/
 **/archives/
 **/backups/

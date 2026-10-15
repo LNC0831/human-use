@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
-import { createClient } from '../skills/human-use/scripts/api.mjs';
+import { connect } from '../lib/connection.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => { const index = args.indexOf(name); return index < 0 ? fallback : args[index + 1]; };
@@ -20,7 +19,7 @@ async function main() {
   const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   if (!input.session_id || !input.cwd || !input.hook_event_name) throw new Error('Hook needs session_id, cwd and hook_event_name');
   if (input.stop_hook_active && ['stop', 'watch'].includes(mode)) return;
-  const client = createClient({ defaultDataDir: fileURLToPath(new URL('../data/', import.meta.url)) });
+  const client = await connect({ project: args.includes('--managed-human-use') ? flag('--project', input.cwd) : process.env.HUMAN_USE_PROJECT, fallbackProject: input.cwd });
   const binding = await client.json('POST', '/api/bindings', { client: clientName, session_id: input.session_id, cwd: input.cwd });
   const bindingPath = `/api/bindings/${binding.id}`;
   const eventPath = `/api/events${['stop', 'watch'].includes(mode) ? '/wait' : ''}`;

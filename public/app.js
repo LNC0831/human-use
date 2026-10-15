@@ -26,7 +26,7 @@ const eventNames = { created: 'AI 发起工单', attachment_added: '上传附件
 const date = value => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 const badge = status => `<span class="badge ${status}">${statusNames[status]}</span>`;
 const canEdit = ticket => ['pending', 'returned', 'blocked'].includes(ticket.status);
-const state = { tickets: [], ticket: null, filter: 'all', q: '', dirty: false, busy: false, archive: null, connected: false, updatePending: false };
+const state = { tickets: [], ticket: null, filter: 'all', q: '', dirty: false, busy: false, archive: null, connected: false, updatePending: false, project: null };
 const app = document.querySelector('#app');
 const dialog = document.querySelector('#dialog');
 let toastTimer, stream, routeVersion = 0, activeHash = location.hash;
@@ -77,7 +77,7 @@ function nav() {
   </aside>`;
 }
 function shell(content, breadcrumb = '工单管理') {
-  app.innerHTML = `<div class="shell">${nav()}<div class="workspace"><header class="topbar"><div class="breadcrumb">工作空间 ${icon('chevron')} <span>${escape(breadcrumb)}</span></div><div class="topbar-right"><span class="connection"><span class="dot"></span>本地服务已连接</span><span class="avatar" title="本机操作者">我</span></div></header><main class="main">${content}</main></div></div>`;
+  app.innerHTML = `<div class="shell">${nav()}<div class="workspace"><header class="topbar"><div class="breadcrumb">${escape(state.project?.name || '工作空间')} ${icon('chevron')} <span>${escape(breadcrumb)}</span></div><div class="topbar-right"><span class="connection"><span class="dot"></span>本地服务已连接</span><span class="avatar" title="本机操作者">我</span></div></header><main class="main">${content}</main></div></div>`;
   updateConnection();
 }
 function unreadTotal() { const count = state.tickets.reduce((sum, t) => sum + (t.unread_count || 0), 0); return count ? `${count} 条未读` : ''; }
@@ -389,6 +389,8 @@ document.addEventListener('visibilitychange', () => {
 async function start() {
   shell('<div class="loading">正在载入本机工作空间…</div>');
   const info = await api('/api/info');
+  state.project = info.project;
+  if (info.project) document.title = info.project.name + ' · Human Use';
   await route();
   stream = new EventSource('/api/events/stream?after=' + info.event_cursor);
   stream.addEventListener('ready', () => { state.connected = true; updateConnection(); });

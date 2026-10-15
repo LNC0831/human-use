@@ -1,6 +1,6 @@
 # 本机工单 HTTP API
 
-基地址默认为 http://127.0.0.1:4317。AI API 使用 `Authorization: Bearer <token>`，token 位于数据目录的 api-token 文件。JSON 请求必须指定 Content-Type: application/json。响应错误形如 `{"error":"具体原因"}`，状态码 400 表示契约错误，401/403 表示访问拒绝，404 表示不存在，409 表示版本或状态冲突，413 表示超过请求大小，422 表示未满足提交必填条件，500 表示服务内部错误（细节见服务终端）。
+CLI 项目服务的端口自动分配，通过 human-use status 查看，或用 human-use api 自动连接；独立源码服务默认 http://127.0.0.1:4317。AI API 使用 `Authorization: Bearer <token>`，token 位于数据目录的 api-token 文件。JSON 请求必须指定 Content-Type: application/json。响应错误形如 `{"error":"具体原因"}`，状态码 400 表示契约错误，401/403 表示访问拒绝，404 表示不存在，409 表示版本或状态冲突，413 表示超过请求大小，422 表示未满足提交必填条件，500 表示服务内部错误（细节见服务终端）。
 
 ## 创建与读取
 
@@ -113,3 +113,11 @@ AI 接口 `POST /api/tickets/{id}/activity` 请求 `{type,message,external_id}`�
 ## 客户端边界
 
 本机 API 不开放跨域，不接受任意 Host，仅监听回环地址。Bearer 凭证不要写进 URL、截图、日志或工单。MCP、Skill 和 hook 都复用此 API。无内置模型调用、任意 shell 回调、远程访问或云端存储。主动续跑取决于客户端，见 [接入指南](接入指南.md)。
+
+## CLI 管理接口（v0.3）
+
+GET /api/info 另包含 project（id、name、root，独立服务为 null）、instance_id 和当前 package 版本。项目运行信息保存在 .human-use/runtime.json；它不包含凭证，客户端仍需读取本项目 api-token。
+
+POST /api/service/stop 仅用于 CLI 管理的服务，需要 Bearer 凭证以及 `{instance_id}`。实例不匹配返回 409，独立源码服务不提供该操作。停止由服务自身清理 SSE、HTTP、SQLite 与运行记录，不影响工单或归档。
+
+每个项目使用独立 Cookie 名称，避免同一主机不同端口的浏览器会话互相覆盖。Cookie 名称基于本项目凭证派生，复制项目配置不会混用会话。

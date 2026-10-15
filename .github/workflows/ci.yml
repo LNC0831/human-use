@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -39,3 +40,5 @@ jobs:
         run: node --check tools/bridge.mjs
       - name: Run tests
         run: npm test
+      - name: Install and smoke-test the actual npm package
+        run: npm run test:package

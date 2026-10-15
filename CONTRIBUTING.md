@@ -12,10 +12,11 @@ the official SDK and Zod. There is no build step. From the repository root:
 npm ci --ignore-scripts
 npm start
 npm test
+npm run test:package
 ```
 
 Run these commands separately: the first keeps the local service running;
-the second runs the test suite. Stop the server with Ctrl+C.
+the remaining commands run the test suite and install an actual npm archive outside the checkout. Stop the server with Ctrl+C.
 
 Read [AGENTS.md](AGENTS.md) before changing code. Keep the implementation direct,
 limit changes to the stated problem, and run checks appropriate to the change.

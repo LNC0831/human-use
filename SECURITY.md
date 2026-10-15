@@ -11,6 +11,10 @@ shared access, and multi-user deployments are outside the current supported scop
 The data directory contains work orders, evidence, archive packages, and an
 API token. Back up and protect the whole directory as private data. Git ignore
 rules reduce accidental inclusion; inspect staged files before publishing.
+CLI projects keep this data in their own .human-use directory. Management checks
+the project directory and service instance before sending an authenticated stop
+request; it does not terminate arbitrary PIDs from a runtime file. Each project
+has a separate credential and browser cookie. Generated client configuration is local.
 
 Connecting a cloud AI client can send the contents it reads to that client's
 model provider. Local application storage does not make an external AI client local.

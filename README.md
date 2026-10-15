@@ -1,176 +1,159 @@
 # Human Use
 
-**A local workspace for the steps AI needs a human to complete.**
+**Turn the step an AI needs a person to perform into a work order with answers, evidence and a verifiable archive.**
 
-[中文说明](README.zh-CN.md) · [API reference](docs/API.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
+[简体中文](README.zh-CN.md) · [Integration guide](docs/接入指南.md) · [API](docs/API.md) · [Deployment and releases](docs/部署与发布.md) · [MIT](LICENSE)
 
-AI agents can write code and call tools, but some steps still require a person:
-checking a device, measuring a value, taking a photo, or answering a question.
-Human Use turns those handoffs into structured work orders, collects the results,
-and preserves the review history in a verifiable local package.
+Human Use runs on your computer. An agent creates a request, a person completes
+the checklist and supplies answers or files in a browser, and the agent reviews
+an explicit submission version and hash. Acceptance freezes a SHA-256-addressed
+package containing the evidence and workflow history.
 
-Human Use is an early version for single-user, same-machine workflows. The web
-interface is currently in Simplified Chinese. AI integration uses an HTTP API
-and a small CLI Bridge; an MCP adapter is planned.
+## Install once, introduce it to any project
 
-## How it works
-
-```mermaid
-flowchart LR
-    A[AI creates a work order] --> B[Human completes the steps]
-    B --> C[Submit a versioned snapshot]
-    C --> D{AI reviews the evidence}
-    D -->|Return with a reason| B
-    D -->|Accept| E[Archive package + SHA-256]
-```
-
-Each work order combines the units it needs:
-
-| Unit | Human input |
-| --- | --- |
-| Checklist | Check off individual steps |
-| Text | Write an answer or describe an observation |
-| Number | Record a measurement, optionally with a unit |
-| Choice | Select one or more options |
-| Attachment | Upload photos, screenshots, logs, or files |
-
-Screenshot copied to the clipboard? Click the attachment area and press **Ctrl+V**.
-The image is uploaded and previewed immediately. File selection also works.
-
-Drafts can be saved without completing required fields. A person can report why
-they are blocked, then resume later. Submissions are preserved as snapshots;
-returned work creates a new submission instead of overwriting the previous one.
-AI acceptance targets an explicit submission version and hash.
-
-## Quick start
-
-Install **Node.js 24 or newer**, download or clone this repository, and open a
-terminal in the checkout:
+Requires **Node.js 24+**. The npm release name and publishing account are being
+finalized; no registry installation is available yet. To try the current source:
 
 ```sh
-npm start
+npm ci --ignore-scripts
+npm pack
+npm install -g ./human-use-0.3.0.tgz
+human-use setup codex
 ```
 
-Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Keep the server running;
-press Ctrl+C in its terminal to stop it. The core server and Skill use only Node.js built-ins and need no build step.
-For MCP or the full test suite, first run `npm ci --ignore-scripts`.
+`setup codex` installs two user-level skills under `~/.agents/skills/`: setup and
+daily human handoffs. It preserves unrelated skills and refuses to replace an
+unmanaged skill with the same name. Start a new Codex session if they are not visible.
 
-The first launch starts with an empty workspace. Click **新建示例** to create a
-sample work order. Completing the sample submits it for review; acceptance is
-performed through the AI API.
-
-### Configuration
-
-| Environment variable | Default | Purpose |
-| --- | --- | --- |
-| PORT | 4317 | Local HTTP port |
-| WORKORDER_DATA_DIR | ./data for server | Server data directory, resolved from the working directory |
-| HUMAN_USE_URL | http://127.0.0.1:4317 | Skill, Bridge, MCP and hook API origin (loopback only) |
-| HUMAN_USE_TOKEN_FILE | checkout data/api-token for repository tools | Absolute token-file path; required for a copied Skill unless WORKORDER_DATA_DIR is set |
-
-For example, in PowerShell:
-
-```powershell
-$env:PORT = '4318'
-$env:WORKORDER_DATA_DIR = Join-Path $env:LOCALAPPDATA 'HumanUse'
-npm start
-```
-
-Bridge, MCP and Skill can use `HUMAN_USE_URL` and an absolute `HUMAN_USE_TOKEN_FILE`.
-Without overrides the repository Bridge and MCP use the checkout’s data directory,
-independently of the client’s working directory. Keep custom data directories
-outside the checkout.
-
-## Connect an AI agent
-
-From the repository root, after starting the server:
+In a project, ask Codex: **“Introduce Human Use into this project.”**
+The setup skill uses the CLI to initialize, start a background service and open
+the project's browser page. The equivalent manual command is:
 
 ```sh
-node tools/bridge.mjs POST /api/tickets examples/ticket.json
-node tools/bridge.mjs GET /api/tickets?status=submitted
-node tools/bridge.mjs GET /api/tickets/TK-000001
+human-use init --project /absolute/path/to/project
 ```
 
-The Bridge reads the local data directory's api-token file and sends it as a
-Bearer token. It does not print the credential. Agents can also call the HTTP
-API directly. Creating a work order returns its ID and local browser URL.
+Windows paths such as `E:/my-project` work. Add `--no-open` for headless use or
+`--no-hooks` for Skill + API only. The default client is Codex; `--client claude`
+generates Claude project hooks. Hook files still require client trust/reloading.
 
-Inspect the latest submission and any relevant attachments, then send a review
-with its version, hash, decision (`accept` or `return`), and a reason. See the
-[API reference](docs/API.md) for the full contract and review examples.
+## Project data and lifecycle
 
-Use **Skill + API** without MCP by copying [skills/human-use](skills/human-use)
-to your client’s skill directory and configuring its token-file path. The bundled
-API script works independently of this checkout and needs no npm dependencies.
-
-Alternatively, connect the stdio MCP entry `mcp/server.mjs` after `npm ci --ignore-scripts`.
-It provides 10 tools for tickets, original evidence, versioned review, archives,
-explicit session bindings, bounded waits and AI activity notices.
-
-The browser now uses SSE with persistent unread receipts and preserves unsaved
-input when updates arrive. Optional Codex / Claude hooks route human events to
-an explicitly bound session and show selected AI actions on the page. Idle wakeup
-depends on the client; Claude asyncRewake is an experimental opt-in, and Codex
-uses a bounded Stop window or next-turn catch-up.
-See the [integration guide](docs/接入指南.md) and [example configurations](integrations/).
-Promotion, package publication and marketplace distribution remain deferred.
-
-## Storage and archive verification
-
-The data directory contains SQLite state, original attachments, archive packages,
-and the API token. Stop the service before copying the entire directory for a backup.
-Work orders, drafts, and evidence stay in that local directory; the application
-uses no cloud storage, external CDN, or telemetry.
-
-Accepted work orders are frozen into a package containing:
+The program is installed once. Each project has its own `.human-use/` directory,
+credential and service instance. Ports are assigned automatically on 127.0.0.1.
+Repeated initialization and starts reuse an existing instance and preserve data.
 
 ```text
-ticket.json             Request, units, and attachment metadata
-submissions/*.json      Every submitted version
-attachments/*           Original uploaded bytes
-reviews.json            Acceptance and return decisions
-events.json             Workflow history
-manifest.json           File paths, byte counts, and SHA-256 hashes
+your-project/
+  human-use.json          Project configuration
+  .human-use/             Private, gitignored local data
+    workorders.sqlite
+    attachments/
+    archives/<sha256>/
+    api-token
+    runtime.json
+    service.log
 ```
 
-The package ID is the SHA-256 of manifest.json. The manifest lists every other
-file; its own hash is not embedded in it. JSON serialization and file ordering
-are fixed. ZIP is an export container and is not the input to the package ID.
+Initialization merges small managed sections into AGENTS.md and .gitignore;
+existing text is preserved. Regular folders work without Git. Worktree sharing
+is outside this version's scope. Run inside the initialized project or pass
+`--project` explicitly:
 
-Look up a package by its full hash, verify its contents, and export it as ZIP.
-Modified packages fail verification and cannot be exported through the app.
+```sh
+human-use status
+human-use stop
+human-use start
+human-use open
+```
 
-## Privacy and limits
+Closing the browser or AI client does not stop the service. Stop active project
+services before upgrading the npm package. After upgrading, run `human-use setup
+codex` again and restart the services. Uninstalling the program leaves project
+records intact. There is no OS auto-start or in-place hot update.
 
-- The service listens only on 127.0.0.1. Remote access and multi-user deployments
-  are outside the current scope.
-- Connecting a cloud AI client may send whatever it reads to that client's model
-  provider. Local storage is separate from where the model runs.
-- PNG, JPEG, WebP, and GIF are previewed. Other files are downloaded. Each file
-  can be at most 20 MiB.
-- Hashes check content consistency. They are not proof of physical actions,
-  personal identity, or a digital signature.
+For old v0.2 data, stop the old service and migrate before initializing an empty
+destination: `human-use migrate --from /old/data --project /your/project`.
+The source remains intact and archive hashes are preserved; the destination
+receives a separate credential. See [deployment details](docs/部署与发布.md).
 
-See [SECURITY.md](SECURITY.md) for the trust boundaries and vulnerability reporting.
+## Skill + API by default; MCP optional
 
-## Development
+The installed skill discovers the project's address and credential through the
+CLI. Users do not need to fill in token paths or port numbers.
+
+```sh
+human-use api POST /api/tickets /path/to/request.json
+human-use api GET /api/tickets?status=submitted
+human-use api GET /api/tickets/TK-000001
+```
+
+An example request is in [examples/ticket.json](examples/ticket.json). Supported
+units are checklist, text, number, choice and attachment. Click an attachment
+area and press **Ctrl+V** to paste a screenshot, or select files normally.
+
+MCP uses the same API and exposes 10 tools, including original evidence reading,
+versioned review, bounded waits and explicit session bindings:
+
+```sh
+human-use integrate codex --mcp
+human-use mcp
+```
+
+The first command merges project MCP configuration; the second is the stdio
+entry used by the client. stdout contains protocol messages only. Claude Code
+is also supported by `integrate claude --mcp`. MCP tools never substitute for
+human draft editing or submission.
+
+The browser uses SSE for live changes, persistent unread receipts and update
+notices that preserve unsaved input. Optional hooks route human events to an
+explicitly bound session and display selected AI actions. Idle wakeup depends on
+the host: Codex uses a bounded Stop window or next-turn catch-up; Claude's optional
+asyncRewake example remains experimental. See the [integration guide](docs/接入指南.md).
+
+## Evidence and archives
+
+People can save drafts, report blockers and resume. Every submission is a
+snapshot. Returning work preserves that snapshot and allows another submission.
+Agents must inspect the actual answers and relevant original files, then review
+the latest version with its exact hash and a reason.
+
+Accepted packages contain ticket.json, submissions/*.json, original attachments,
+reviews.json, events.json and manifest.json. The package ID is the SHA-256 of the
+manifest bytes, whose entries list all other file hashes and sizes. ZIP is an
+export container, not the input to the package ID. Modified archives fail verification
+and cannot be exported through the app. Read receipts and activity notices do not
+rewrite frozen evidence.
+
+Data stays local: no cloud storage, external CDN or telemetry. A connected cloud
+model may receive evidence it reads. Hashes check content consistency, not physical
+actions or personal identity. Files are limited to 20 MiB; PNG, JPEG, WebP and GIF
+are previewed, while other files download. See [SECURITY.md](SECURITY.md).
+
+## Development and releases
 
 ```sh
 npm ci --ignore-scripts
 npm test
+npm run test:package
 ```
 
-Tests use Node.js's built-in runner and cover submission snapshots, return and
-resubmission, stale reviews, draft conflicts, tampering, persistence, HTTP access
-boundaries, ZIP contents, durable events, SSE replay, a copied Skill, real SDK
-stdio calls and hook routing/exit codes. CI is configured for Node.js 24 on Windows and Linux.
-Restricted Windows sandboxes can block loopback connections or directory renames;
-run these checks in a normal local terminal.
+Tests use Node's built-in runner and the official MCP SDK. The package smoke test
+installs the actual `.tgz` outside the checkout and exercises the CLI shim, copied
+skills, separate projects, browser submission, archive, restart and MCP.
+CI is configured for Node 24 on Windows and Linux; remote execution requires a
+GitHub repository. Restricted Windows sandboxes may need loopback/process permissions.
 
-The implementation uses Node.js HTTP, SQLite, filesystem, and crypto modules,
-with plain HTML, CSS, and JavaScript in the browser. Read the
-[development discipline](AGENTS.md), [contribution guide](CONTRIBUTING.md), and
-[v1 design baseline](docs/方案-v1.md) before making changes.
+Version tags such as `v0.3.0` run CI and prepare a draft GitHub Release with the
+npm archive and checksums. npm publication is a separate manual workflow using
+the reviewed release asset and configured publishing identity. Publishing remains
+disabled until the owner, package name and repository are confirmed. Marketplace
+distribution and promotion are deferred.
+
+For legacy source-only operation, `npm start` still runs the standalone server on
+port 4317 with `WORKORDER_DATA_DIR` / `PORT`; do not point it at a concurrently
+running CLI-managed database. Read [AGENTS.md](AGENTS.md),
+[CONTRIBUTING.md](CONTRIBUTING.md) and the [release guide](docs/部署与发布.md).
 
 ## License
 

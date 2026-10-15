@@ -1,6 +1,6 @@
 {
   "name": "human-use",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Local-first human-in-the-loop work orders for AI agents",
@@ -17,10 +17,32 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test",
-    "mcp": "node mcp/server.mjs"
+    "mcp": "node mcp/server.mjs",
+    "test:package": "node scripts/smoke-package.mjs",
+    "check:release": "node scripts/check-release.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "zod": "^4.6.7"
-  }
+  },
+  "bin": {
+    "human-use": "./cli.mjs"
+  },
+  "files": [
+    "cli.mjs",
+    "server.mjs",
+    "store.mjs",
+    "archive.mjs",
+    "lib/",
+    "public/",
+    "mcp/",
+    "tools/",
+    "skills/",
+    "integrations/",
+    "examples/",
+    "docs/API.md",
+    "docs/接入指南.md",
+    "docs/部署与发布.md",
+    "SECURITY.md"
+  ]
 }

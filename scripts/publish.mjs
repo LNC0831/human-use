@@ -1,0 +1,21 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync, mkdirSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { createHash } from 'node:crypto';
+
+const tag = process.env.HUMAN_USE_RELEASE_TAG;
+if (!tag?.startsWith('v')) throw new Error('Provide a release tag.');
+const env = { ...process.env, GITHUB_REF_NAME: tag };
+execFileSync(process.execPath, ['scripts/check-release.mjs', '--publish'], { env, stdio: 'inherit' });
+const release = JSON.parse(execFileSync('gh', ['release', 'view', tag, '--json', 'isDraft'], { encoding: 'utf8' }));
+if (release.isDraft) throw new Error('Review and publish the GitHub draft release before dispatching npm publication.');
+const output = resolve('.release'); mkdirSync(output, { recursive: true });
+execFileSync('gh', ['release', 'download', tag, '--dir', output, '--pattern', '*.tgz', '--pattern', 'SHA256SUMS.txt'], { stdio: 'inherit' });
+const files = readdirSync(output).filter(file => file.endsWith('.tgz'));
+if (files.length !== 1) throw new Error('Release must contain exactly one npm archive.');
+const archive = join(output, files[0]);
+const expected = readFileSync(join(output, 'SHA256SUMS.txt'), 'utf8').trim();
+const actual = `${createHash('sha256').update(readFileSync(archive)).digest('hex')}  ${files[0]}`;
+if (expected !== actual) throw new Error('Release archive checksum does not match.');
+const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+execFileSync('npm', ['publish', archive, '--access', 'public', '--tag', pkg.version.includes('-') ? 'next' : 'latest', '--ignore-scripts'], { stdio: 'inherit' });

@@ -1,9 +1,11 @@
 import { createServer } from 'node:http';
 import { randomBytes, createHmac } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync, unlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import { Store, HttpError, requireCondition } from './store.mjs';
+import { loadProject } from './lib/project.mjs';
+import { version } from './lib/version.mjs';
 
 const publicRoot = fileURLToPath(new URL('./public/', import.meta.url));
 export const MAX_UPLOAD = 20 * 1024 * 1024;
@@ -33,9 +35,10 @@ async function jsonBody(request) {
   return body;
 }
 
-export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 'data') } = {}) {
+export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 'data'), project = null, instanceId = null, onStop } = {}) {
   const store = new Store(dataDir);
   const session = createHmac('sha256', store.token).update('human-use.browser-session.v1').digest('hex');
+  const cookieName = project ? `human_use_${session.slice(0, 16)}` : 'workorder_session';
   const streams = new Set();
   const server = createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -56,16 +59,22 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
       const url = new URL(request.url, `http://${host}`), path = url.pathname, method = request.method;
       const assets = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
       if (method === 'GET' && assets[path]) {
-        if (path === '/') response.setHeader('Set-Cookie', `workorder_session=${session}; HttpOnly; SameSite=Strict; Path=/`);
+        if (path === '/') response.setHeader('Set-Cookie', `${cookieName}=${session}; HttpOnly; SameSite=Strict; Path=/`);
         return send(200, readFileSync(join(publicRoot, assets[path][0])), assets[path][1]);
       }
       const bearer = request.headers.authorization === `Bearer ${store.token}`;
       const cookies = (request.headers.cookie || '').split(';').map(c => c.trim());
-      const human = cookies.includes(`workorder_session=${session}`);
+      const human = cookies.includes(`${cookieName}=${session}`);
       requireCondition(bearer || human, '需要本机 API Bearer token 或网页会话', 401);
       const agentOnly = () => requireCondition(bearer, '验收和取消需要 AI 接口凭证', 403);
       const humanOnly = () => requireCondition(human, '人工操作请使用本机网页会话', 403);
-      if (method === 'GET' && path === '/api/info') return send(200, { name: 'Human Use', version: '0.2.0', access: 'loopback', max_upload_bytes: MAX_UPLOAD, event_cursor: store.cursor() });
+      if (method === 'GET' && path === '/api/info') return send(200, { name: 'Human Use', version, access: 'loopback', max_upload_bytes: MAX_UPLOAD, event_cursor: store.cursor(),
+        project: project ? { id: project.id, name: project.name, root: project.root } : null, instance_id: instanceId });
+      if (method === 'POST' && path === '/api/service/stop') {
+        agentOnly(); requireCondition(onStop && instanceId, 'This service is not CLI-managed', 409);
+        requireCondition((await jsonBody(request)).instance_id === instanceId, 'Service instance changed', 409);
+        send(200, { stopping: true }); setImmediate(onStop); return;
+      }
       if (method === 'GET' && ['/api/events', '/api/events/wait', '/api/events/stream'].includes(path)) {
         const query = Object.fromEntries(url.searchParams);
         if (request.headers['last-event-id']) query.after = request.headers['last-event-id'];
@@ -179,13 +188,27 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 4317);
-  const { server, store, close } = createApp();
+  const project = process.env.HUMAN_USE_PROJECT ? loadProject(process.env.HUMAN_USE_PROJECT) : null;
+  const instanceId = project ? process.env.HUMAN_USE_INSTANCE : null;
+  const runtime = project && join(project.dataDir, 'runtime.json');
+  const stop = () => close(() => {
+    store.close();
+    if (runtime && existsSync(runtime) && JSON.parse(readFileSync(runtime, 'utf8')).instance_id === instanceId) unlinkSync(runtime);
+    process.exit(0);
+  });
+  const { server, store, close } = createApp({ ...(project ? { dataDir: project.dataDir } : {}), project, instanceId, onStop: project ? stop : undefined });
   server.listen(port, '127.0.0.1', () => {
+    if (project) {
+      const temp = `${runtime}.${instanceId}.tmp`;
+      writeFileSync(temp, JSON.stringify({ project_id: project.id, instance_id: instanceId, url: `http://127.0.0.1:${server.address().port}`, pid: process.pid, version }, null, 2) + '\n', { mode: 0o600 });
+      renameSync(temp, runtime);
+    }
     console.log(`Human Use 已启动：http://127.0.0.1:${server.address().port}`);
     console.log(`本地数据目录：${store.root}`);
     console.log(`API 凭证文件：${join(store.root, 'api-token')}（请勿公开）`);
+    if (process.send) process.send({ type: 'ready' });
   });
   server.on('error', error => { console.error(error); process.exitCode = 1; store.close(); });
-  process.on('SIGINT', () => close(() => { store.close(); process.exit(0); }));
-  process.on('SIGTERM', () => close(() => { store.close(); process.exit(0); }));
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
 }
