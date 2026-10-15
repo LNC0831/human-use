@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "human-use": {
+      "command": "node",
+      "args": ["/ABSOLUTE/PATH/TO/HumanUse/mcp/server.mjs"],
+      "env": {
+        "HUMAN_USE_URL": "http://127.0.0.1:4317",
+        "HUMAN_USE_TOKEN_FILE": "/ABSOLUTE/PATH/TO/HumanUse/data/api-token"
+      }
+    }
+  }
+}

@@ -26,10 +26,10 @@ const eventNames = { created: 'AI 发起工单', attachment_added: '上传附件
 const date = value => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 const badge = status => `<span class="badge ${status}">${statusNames[status]}</span>`;
 const canEdit = ticket => ['pending', 'returned', 'blocked'].includes(ticket.status);
-const state = { tickets: [], ticket: null, filter: 'all', q: '', dirty: false, busy: false, archive: null };
+const state = { tickets: [], ticket: null, filter: 'all', q: '', dirty: false, busy: false, archive: null, connected: false, updatePending: false };
 const app = document.querySelector('#app');
 const dialog = document.querySelector('#dialog');
-let toastTimer, routeVersion = 0, activeHash = location.hash;
+let toastTimer, stream, routeVersion = 0, activeHash = location.hash;
 
 async function api(path, options = {}) {
   const request = { ...options };
@@ -66,7 +66,7 @@ function nav() {
   const item = (href, symbol, label, count, active) => `<a class="nav-item${active ? ' active' : ''}" href="#${href}">${icon(symbol)}${label}${count !== null ? `<span class="nav-count">${count}</span>` : ''}</a>`;
   return `<aside class="sidebar">
     <a class="brand" href="#all"><span class="brand-mark">${icon('logo')}</span><span><strong>Human Use</strong><small>HUMAN IN THE LOOP</small></span></a>
-    <div class="nav-label">工作空间</div><nav class="nav">
+    <div class="nav-label">工作空间 <span class="unread-total">${unreadTotal()}</span></div><nav class="nav">
       ${item('all', 'list', '全部工单', state.tickets.length, !route || route === 'all' || route.startsWith('ticket/'))}
       ${item('pending', 'inbox', '待我处理', pending, route === 'pending')}
       ${item('submitted', 'clock', '等待验收', state.tickets.filter(t => t.status === 'submitted').length, route === 'submitted')}
@@ -78,6 +78,23 @@ function nav() {
 }
 function shell(content, breadcrumb = '工单管理') {
   app.innerHTML = `<div class="shell">${nav()}<div class="workspace"><header class="topbar"><div class="breadcrumb">工作空间 ${icon('chevron')} <span>${escape(breadcrumb)}</span></div><div class="topbar-right"><span class="connection"><span class="dot"></span>本地服务已连接</span><span class="avatar" title="本机操作者">我</span></div></header><main class="main">${content}</main></div></div>`;
+  updateConnection();
+}
+function unreadTotal() { const count = state.tickets.reduce((sum, t) => sum + (t.unread_count || 0), 0); return count ? `${count} 条未读` : ''; }
+function updateUnreadMarkers() {
+  const total = document.querySelector('.unread-total'); if (total) total.textContent = unreadTotal();
+  for (const ticket of state.tickets) {
+    const link = document.querySelector(`.ticket-table .ticket-title[href="#ticket/${ticket.id}"]`);
+    if (!link) continue;
+    link.parentElement.querySelector('.unread-badge')?.remove();
+    if (ticket.unread_count) {
+      const marker = document.createElement('span'); marker.className = 'unread-badge'; marker.textContent = ticket.status === 'pending' ? '新' : '有更新'; link.after(marker);
+    }
+  }
+}
+function updateConnection() {
+  const el = document.querySelector('.connection');
+  if (el) { el.textContent = state.connected ? '● 实时连接' : '○ 正在重新连接'; el.classList.toggle('disconnected', !state.connected); }
 }
 function empty(title, message, action = '') {
   return `<div class="empty"><div class="empty-icon">${icon('inbox')}</div><h2>${escape(title)}</h2><p>${escape(message)}</p>${action}</div>`;
@@ -92,7 +109,7 @@ function matchingTickets() {
 function table() {
   const tickets = matchingTickets();
   if (!tickets.length) return empty(state.tickets.length ? '这里暂时没有工单' : '准备好，接住 AI 交给你的一步', state.tickets.length ? '试试其他状态，或者换一个搜索关键词。' : 'AI 发起请求后，工单会出现在这里。也可以先用一张示例工单，体验填写、提交与验收。', state.tickets.length ? '' : '<button class="btn primary" data-action="demo">创建一张示例工单</button>');
-  return `<div class="table-scroll"><table class="ticket-table"><thead><tr><th>工单 / 任务</th><th class="source-col">来源</th><th>状态</th><th class="date-col">最近更新</th><th></th></tr></thead><tbody>${tickets.map(t => `<tr><td><a class="ticket-title" href="#ticket/${t.id}">${escape(t.title)}</a><div class="ticket-meta"><span class="mono">${t.id}</span><span>·</span><span>${t.unit_count} 个任务单元</span>${t.submission_count ? `<span>· 第 ${t.submission_count} 次提交</span>` : ''}</div></td><td class="source-col"><span class="source">${icon('link')}${escape(t.source)}</span></td><td>${badge(t.status)}</td><td class="muted date-col">${date(t.updated_at)}</td><td><a class="row-link" href="#ticket/${t.id}">${canEdit(t) ? '去处理' : '查看'} ${icon('arrow')}</a></td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="table-scroll"><table class="ticket-table"><thead><tr><th>工单 / 任务</th><th class="source-col">来源</th><th>状态</th><th class="date-col">最近更新</th><th></th></tr></thead><tbody>${tickets.map(t => `<tr><td><a class="ticket-title" href="#ticket/${t.id}">${escape(t.title)}</a>${t.unread_count ? `<span class="unread-badge">${t.status === 'pending' ? '新' : '有更新'}</span>` : ''}<div class="ticket-meta"><span class="mono">${t.id}</span><span>·</span><span>${t.unit_count} 个任务单元</span>${t.submission_count ? `<span>· 第 ${t.submission_count} 次提交</span>` : ''}</div></td><td class="source-col"><span class="source">${icon('link')}${escape(t.source)}</span></td><td>${badge(t.status)}</td><td class="muted date-col">${date(t.updated_at)}</td><td><a class="row-link" href="#ticket/${t.id}">${canEdit(t) ? '去处理' : '查看'} ${icon('arrow')}</a></td></tr>`).join('')}</tbody></table></div>`;
 }
 function renderList() {
   const processing = state.tickets.filter(t => ['pending', 'returned', 'blocked'].includes(t.status)).length;
@@ -156,6 +173,10 @@ function renderTicket() {
     <aside class="detail-sidebar"><section class="card side-card"><h3>协作进度</h3><ol class="process">${['AI 发起请求', '人完成操作', 'AI 验收结果', '形成归档记录'].map((label, index) => `<li class="${index < step ? 'done' : index === step ? 'current' : ''}">${label}<small>${['任务与验收标准已明确', '填写结果并提交证据', '对本次提交进行判断', '完整工单包与内容哈希'][index]}</small></li>`).join('')}</ol></section>
     <section class="card side-card"><h3>工单信息</h3><dl><div class="side-pair"><dt>当前提交版本</dt><dd>${t.submissions.length ? `第 ${t.submissions.length} 次提交` : '尚未提交'}</dd></div><div class="side-pair"><dt>最近更新</dt><dd>${date(t.updated_at)}</dd></div><div class="side-pair"><dt>保存位置</dt><dd>本机 · ${t.attachments.length} 个附件</dd></div>${t.archive_hash ? `<div class="side-pair"><dt>归档哈希</dt><dd class="mono">${t.archive_hash}</dd></div>` : ''}</dl><p class="small muted">提交记录会保留。AI 验收通过后，工单将冻结归档。</p></section>
     <section class="card side-card"><h3>最近动态</h3><div class="timeline">${[...t.events].reverse().slice(0, 7).map(event => `<div class="event"><p>${eventNames[event.type]}${event.version ? ' · 第 ' + event.version + ' 版' : ''}</p><time>${date(event.at)}</time></div>`).join('')}</div></section></aside></div>`, '工单详情');
+  document.querySelector('.detail-heading').insertAdjacentHTML('afterend', '<div id="live-update" class="banner live-update"' + (state.updatePending ? '' : ' hidden') + '><strong>这张工单有新动态</strong>当前填写内容已保留。<button class="btn" data-action="refresh">查看最新内容</button></div>');
+  const activity = (t.activity || []).filter(e => e.type.startsWith('agent.')).map(e => ({ ...e, at: e.created_at }));
+  document.querySelector('.timeline').innerHTML = [...t.events, ...activity].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 7).map(event =>
+    `<div class="event${event.type.startsWith('agent.') ? ' agent-activity' : ''}"><p>${escape(event.message ? 'AI · ' + event.message : eventNames[event.type])}${event.version ? ' · 第 ' + event.version + ' 版' : ''}</p><time>${date(event.at)}</time></div>`).join('');
 }
 function readForm() {
   const answers = {};
@@ -196,7 +217,7 @@ function archiveResult(result) {
   return `<section class="card archive-result"><div class="banner ${result.valid ? 'success' : 'error'}"><strong>${result.valid ? '完整性校验通过' : '完整性校验失败'}</strong>${result.valid ? `${result.file_count} 个文件与清单一致，清单哈希与工单包标识一致。` : escape(result.errors.join('；'))}</div>${result.ticket ? `<h2>${escape(result.ticket.title)}</h2><p>${escape(result.ticket.id)} · ${escape(result.ticket.source)}</p>` : ''}<div class="hash-box">${result.hash}</div><div class="actions"><button class="btn" data-action="verify" data-hash="${result.hash}">${icon('refresh')}重新校验</button>${result.valid ? `<a class="btn primary" href="/api/archives/${result.hash}/download">${icon('download')}导出工单包 ZIP</a>` : ''}${result.ticket ? `<a class="btn" href="#ticket/${result.ticket.id}">查看工单</a>` : ''}</div></section>`;
 }
 function openIntegration() {
-  dialog.innerHTML = `<div class="dialog-header"><h2>让 AI 接入协作台</h2><button class="btn quiet" data-action="close-dialog" aria-label="关闭">${icon('close')}</button></div><p>通过本机 HTTP API 创建工单、读取提交与附件，再返回验收结论。网页负责人的操作，API 负责 AI 的交接。</p><p>地址：<code>${escape(location.origin)}/api</code><br>凭证保存在数据目录的 <code>api-token</code> 文件，请由本机 AI 客户端读取，并用 <code>Authorization: Bearer &lt;token&gt;</code> 发送。</p><table class="api-table"><tbody><tr><td>创建请求</td><td><code>POST /api/tickets</code></td></tr><tr><td>查询状态</td><td><code>GET /api/tickets?status=submitted</code></td></tr><tr><td>读取工单</td><td><code>GET /api/tickets/{id}</code></td></tr><tr><td>读取附件</td><td><code>GET /api/tickets/{id}/attachments/{attachment_id}</code></td></tr><tr><td>验收提交</td><td><code>POST /api/tickets/{id}/review</code></td></tr><tr><td>读取归档</td><td><code>GET /api/archives/{hash}</code></td></tr></tbody></table><p>验收请求示例。版本号和哈希必须来自刚读取的最新提交：</p><pre class="api-code">${escape(JSON.stringify({ version: 1, submission_hash: '<最新提交的完整哈希>', decision: 'accept', reason: '操作记录和附件满足验收标准。' }, null, 2))}</pre><p>详细契约和可执行调用示例见项目的 docs/API.md。云端 AI 读取内容后是否外发，由接入客户端控制。</p><div class="dialog-footer"><button class="btn primary" data-action="close-dialog">知道了</button></div>`;
+  dialog.innerHTML = `<div class="dialog-header"><h2>让 AI 接入协作台</h2><button class="btn quiet" data-action="close-dialog" aria-label="关闭">${icon('close')}</button></div><p>通过本机 HTTP API 创建工单、读取提交与附件，再返回验收结论。网页负责人的操作，API 负责 AI 的交接。</p><p>地址：<code>${escape(location.origin)}/api</code><br>凭证保存在数据目录的 <code>api-token</code> 文件，请由本机 AI 客户端读取，并用 <code>Authorization: Bearer &lt;token&gt;</code> 发送。</p><table class="api-table"><tbody><tr><td>创建请求</td><td><code>POST /api/tickets</code></td></tr><tr><td>查询状态</td><td><code>GET /api/tickets?status=submitted</code></td></tr><tr><td>读取工单</td><td><code>GET /api/tickets/{id}</code></td></tr><tr><td>读取附件</td><td><code>GET /api/tickets/{id}/attachments/{attachment_id}</code></td></tr><tr><td>验收提交</td><td><code>POST /api/tickets/{id}/review</code></td></tr><tr><td>读取归档</td><td><code>GET /api/archives/{hash}</code></td></tr></tbody></table><p>验收请求示例。版本号和哈希必须来自刚读取的最新提交：</p><pre class="api-code">${escape(JSON.stringify({ version: 1, submission_hash: '<最新提交的完整哈希>', decision: 'accept', reason: '操作记录和附件满足验收标准。' }, null, 2))}</pre><p>可使用 MCP，或复制 skills/human-use 后通过 Skill + API 接入。会话 hook 配置见 integrations/，需要在客户端中手动启用。详细步骤见 docs/接入指南.md，API 契约见 docs/API.md。云端 AI 读取内容后是否外发，由接入客户端控制。</p><div class="dialog-footer"><button class="btn primary" data-action="close-dialog">知道了</button></div>`;
   dialog.showModal();
 }
 function openBlock() {
@@ -205,7 +226,7 @@ function openBlock() {
 }
 async function route() {
   const version = ++routeVersion;
-  state.dirty = false; state.q = '';
+  state.dirty = false; state.q = ''; state.updatePending = false;
   const route = location.hash.slice(1) || 'all';
   try {
     await refreshList();
@@ -213,7 +234,7 @@ async function route() {
     if (route.startsWith('ticket/')) {
       const ticket = await api(`/api/tickets/${encodeURIComponent(route.slice(7))}`);
       if (version !== routeVersion) return;
-      state.ticket = ticket; renderTicket();
+      state.ticket = ticket; renderTicket(); await markVisibleRead(ticket);
     } else if (route === 'archives' || route.startsWith('archive/')) {
       state.archive = route.startsWith('archive/') ? await api(`/api/archives/${encodeURIComponent(route.slice(8))}`) : null;
       if (version !== routeVersion) return;
@@ -322,20 +343,57 @@ window.addEventListener('hashchange', () => {
   activeHash = location.hash;
   route();
 });
-setInterval(async () => {
-  if (state.busy || state.dirty || dialog.open || document.activeElement.matches('input,textarea,select,[data-paste]')) return;
-  const hash = location.hash, version = routeVersion;
+async function markVisibleRead(ticket) {
+  if (!ticket.last_event_id || document.hidden) return;
+  await api('/api/tickets/' + ticket.id + '/read', { method: 'POST', body: { event_id: ticket.last_event_id } });
+  await refreshList();
+  const unread = document.querySelector('.unread-total');
+  if (unread) unread.textContent = unreadTotal();
+}
+let eventTimer, processingEvents = false;
+const receivedEvents = new Map();
+function scheduleEvents() { clearTimeout(eventTimer); eventTimer = setTimeout(processEvents, 150); }
+async function processEvents() {
+  if (processingEvents) { scheduleEvents(); return; }
+  processingEvents = true;
+  const events = [...receivedEvents.values()]; receivedEvents.clear();
+  const version = routeVersion, hash = location.hash;
   try {
-    if (state.ticket && hash === `#ticket/${state.ticket.id}`) {
-      const ticket = await api(`/api/tickets/${state.ticket.id}`);
-      if (version === routeVersion && !state.dirty && !state.busy && ticket.revision !== state.ticket.revision) {
-        state.ticket = ticket; await refreshList(); renderTicket();
+    await refreshList();
+    if (version !== routeVersion) return;
+    const unread = document.querySelector('.unread-total');
+    if (unread) unread.textContent = unreadTotal();
+    const current = state.ticket && hash === '#ticket/' + state.ticket.id;
+    const affecting = events.some(e => e.ticket_id === state.ticket?.id);
+    if (current && affecting) {
+      state.updatePending = true;
+      if (state.busy || state.dirty || dialog.open || document.activeElement.matches('input,textarea,select,[data-paste]')) {
+        const banner = document.querySelector('#live-update'); if (banner) banner.hidden = false;
+      } else {
+        const ticket = await api('/api/tickets/' + state.ticket.id);
+        if (version === routeVersion && !state.dirty && !state.busy && !dialog.open) {
+          state.ticket = ticket; state.updatePending = false; renderTicket(); await markVisibleRead(ticket);
+        }
       }
-    } else if (!hash.startsWith('#archive')) {
-      await refreshList();
-      if (version === routeVersion && !state.busy) renderList();
+    } else if (!current && !state.busy && !dialog.open && !document.activeElement.matches('input,textarea,select')) {
+      if (hash.startsWith('#archive')) renderArchives(); else renderList();
     }
-  } catch (error) { toast(`刷新失败：${error.message}`, true); }
-}, 12000);
-shell('<div class="loading">正在载入本机工作空间…</div>');
-route();
+    const event = events.filter(e => e.actor !== 'human').at(-1);
+    if (event) toast(event.title + ' · ' + (event.message || ({ 'ticket.created': 'AI 发来了新工单', 'review.returned': '需要补充', 'ticket.archived': '已验收归档', 'ticket.cancelled': '已取消' }[event.type] || '有新动态')));
+  } catch (error) { toast('读取新动态失败：' + error.message, true); }
+  finally { processingEvents = false; if (receivedEvents.size) scheduleEvents(); }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.ticket && location.hash === '#ticket/' + state.ticket.id && !state.updatePending) markVisibleRead(state.ticket).catch(error => toast(error.message, true));
+});
+async function start() {
+  shell('<div class="loading">正在载入本机工作空间…</div>');
+  const info = await api('/api/info');
+  await route();
+  stream = new EventSource('/api/events/stream?after=' + info.event_cursor);
+  stream.addEventListener('ready', () => { state.connected = true; updateConnection(); });
+  stream.addEventListener('read', () => { refreshList().then(updateUnreadMarkers).catch(error => toast(error.message, true)); });
+  stream.onerror = () => { state.connected = false; updateConnection(); };
+  stream.onmessage = message => { const event = JSON.parse(message.data); receivedEvents.set(event.event_id, event); scheduleEvents(); };
+}
+start().catch(error => { shell(empty('无法连接本机服务', error.message)); });

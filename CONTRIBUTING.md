@@ -5,10 +5,11 @@ pull requests are welcome. Issues and pull requests may be written in English or
 
 ## Development
 
-Use Node.js 24 or newer. There are no third-party runtime dependencies and no
-build step. From the repository root:
+Use Node.js 24 or newer. The core server and Skill use built-in modules; MCP uses
+the official SDK and Zod. There is no build step. From the repository root:
 
 ```sh
+npm ci --ignore-scripts
 npm start
 npm test
 ```

@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "node \"/ABSOLUTE/PATH/TO/HumanUse/tools/hook.mjs\" --client claude --mode watch --seconds 900", "asyncRewake": true, "timeout": 930 }] }]
+  }
+}

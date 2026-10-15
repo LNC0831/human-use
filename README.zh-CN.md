@@ -8,7 +8,7 @@ AI 创建工单，人通过本机网页完成操作并提供证据，AI 验收�
 
 ## 启动
 
-需要 Node.js 24 或更新版本。本项目没有第三方依赖，无需 npm install。下载或克隆仓库后，在项目目录运行：
+需要 Node.js 24 或更新版本。核心服务与 Skill 仅依赖 Node 内置模块，无需构建。使用 MCP 或运行完整测试前，先执行 `npm ci --ignore-scripts`。在项目目录运行：
 
 ```powershell
 npm start
@@ -28,7 +28,7 @@ node tools/bridge.mjs GET /api/tickets?status=submitted
 node tools/bridge.mjs GET /api/tickets/TK-000001
 ```
 
-Bridge 自动读取数据目录中的 api-token，不在日志中输出凭证。AI 也可直接调用 HTTP API，使用 Bearer token。完整契约与验收示例见 [API 文档](docs/API.md)。首版已提供 HTTP Bridge，MCP 封装留待后续接入具体客户端时实现。
+Bridge 自动读取数据目录中的 api-token，不在日志中输出凭证。AI 也可直接调用 HTTP API，使用 Bearer token。完整契约与验收示例见 [API 文档](docs/API.md)。现在可选择 **[Skill + API](skills/human-use/SKILL.md)** 或 **stdio MCP**：Skill 可独立复制使用，无需 MCP；MCP 提供建单、证据读取、版本验收、归档及事件工具。配置、hook 与会话绑定见 **[接入指南](docs/接入指南.md)**。
 
 ## 使用流程
 
@@ -38,7 +38,7 @@ Bridge 自动读取数据目录中的 api-token，不在日志中输出凭证。
 4. AI 读取回答和所需附件，对明确的提交版本验收。退回须说明原因，补交产生新版本。
 5. AI 验收通过后形成归档包，可按完整哈希查找、校验、导出 ZIP。
 
-页面每 12 秒查询一次状态；编辑时不会自动覆盖未保存输入。软件不会主动唤醒 AI 会话，需要接入客户端主动查询工单。
+页面通过 SSE 实时更新，保存未读状态；编辑时保留未保存输入并提示有更新。可选 hook 把人工提交回传给明确绑定的会话，也可显示 AI 动作。Codex 采用限时 Stop 等待及下一轮补读，Claude 另有实验 asyncRewake 配置，具体能力取决于客户端。推广和分发暂不推进。
 
 ## 数据与边界
 
@@ -57,10 +57,11 @@ Bridge 自动读取数据目录中的 api-token，不在日志中输出凭证。
 遵守 [AGENTS.md 中的开发纪律](AGENTS.md)。冻结开发基线见 [首版方案](docs/方案-v1.md)。
 
 ```powershell
+npm ci --ignore-scripts
 npm test
 ```
 
-测试使用 Node.js 内置测试器，覆盖完整闭环、提交快照、过期验收、草稿冲突、证据修改、重启持久化、HTTP 访问边界与 ZIP 内容。Windows 受限沙箱可能阻止回环连接或目录重命名，需在普通本机终端运行这些检查。
+测试使用 Node.js 内置测试器，覆盖完整闭环、提交快照、过期验收、草稿冲突、证据修改、重启持久化、HTTP 访问边界、ZIP、持久化事件、SSE 补读、独立 Skill、真实 MCP stdio 与 hook 路由。Windows 受限沙箱可能阻止回环连接或目录重命名，需在普通本机终端运行这些检查。
 
 GitHub CI 配置了 Node.js 24 的 Windows 与 Linux 测试。欢迎用中文或英文提交 Issue 和 PR，详见 [贡献指南](CONTRIBUTING.md)。安全边界与漏洞报告方式见 [SECURITY.md](SECURITY.md)。
 

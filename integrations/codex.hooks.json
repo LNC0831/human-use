@@ -1,0 +1,8 @@
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node \"/ABSOLUTE/PATH/TO/HumanUse/tools/hook.mjs\" --client codex --mode context", "timeout": 10 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node \"/ABSOLUTE/PATH/TO/HumanUse/tools/hook.mjs\" --client codex --mode context", "timeout": 10 }] }],
+    "PostToolUse": [{ "matcher": "Write|Edit|apply_patch", "hooks": [{ "type": "command", "command": "node \"/ABSOLUTE/PATH/TO/HumanUse/tools/hook.mjs\" --client codex --mode notify", "timeout": 10 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "node \"/ABSOLUTE/PATH/TO/HumanUse/tools/hook.mjs\" --client codex --mode stop --seconds 20", "timeout": 30 }] }]
+  }
+}

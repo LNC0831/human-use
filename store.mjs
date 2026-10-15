@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { EventEmitter } from 'node:events';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -72,8 +73,9 @@ function validateAnswers(ticket, answers, submitting) {
   }
 }
 
-export class Store {
+export class Store extends EventEmitter {
   constructor(root) {
+    super();
     this.root = root;
     this.attachmentsRoot = join(root, 'attachments');
     this.archivesRoot = join(root, 'archives');
@@ -88,13 +90,31 @@ export class Store {
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         source TEXT NOT NULL, request_key TEXT NOT NULL, request_hash TEXT NOT NULL,
         document TEXT NOT NULL, UNIQUE(source, request_key)
+      );
+      CREATE TABLE IF NOT EXISTS activity (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id TEXT NOT NULL,
+        binding_id TEXT, actor TEXT NOT NULL, type TEXT NOT NULL, document TEXT NOT NULL,
+        external_id TEXT, UNIQUE(ticket_id, external_id)
+      );
+      CREATE INDEX IF NOT EXISTS activity_ticket ON activity(ticket_id, seq);
+      CREATE TABLE IF NOT EXISTS receipts (ticket_id TEXT PRIMARY KEY, event_id INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS bindings (
+        id TEXT PRIMARY KEY, client TEXT NOT NULL, session_id TEXT NOT NULL, cwd TEXT NOT NULL,
+        cursor INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(client, session_id, cwd)
       );`);
   }
   close() { this.db.close(); }
   transaction(fn) {
+    if (this.pendingEvents) return fn();
     this.db.exec('BEGIN IMMEDIATE');
-    try { const result = fn(); this.db.exec('COMMIT'); return result; }
+    this.pendingEvents = [];
+    let result, events;
+    try { result = fn(); this.db.exec('COMMIT'); events = this.pendingEvents; }
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    finally { this.pendingEvents = null; }
+    for (const event of events) this.emit('activity', event);
+    return result;
   }
   get(id) {
     requireCondition(/^TK-\d{6,}$/.test(id), '工单不存在', 404);
@@ -103,10 +123,17 @@ export class Store {
     return JSON.parse(row.document);
   }
   save(ticket, timestamp = now()) {
-    ticket.revision++;
-    ticket.updated_at = timestamp;
-    this.db.prepare('UPDATE tickets SET document = ? WHERE seq = ?').run(JSON.stringify(ticket), Number(ticket.id.slice(3)));
-    return ticket;
+    return this.transaction(() => {
+      const previous = this.get(ticket.id);
+      ticket.revision++;
+      ticket.updated_at = timestamp;
+      this.db.prepare('UPDATE tickets SET document = ? WHERE seq = ?').run(JSON.stringify(ticket), Number(ticket.id.slice(3)));
+      const names = { created: 'ticket.created', submitted: 'submission.created', blocked: 'ticket.blocked', resumed: 'ticket.resumed', returned: 'review.returned', archived: 'ticket.archived', cancelled: 'ticket.cancelled' };
+      for (const event of ticket.events.slice(previous.events?.length || 0)) {
+        if (names[event.type]) this.recordActivity(ticket, names[event.type], event.actor, event.reason || '', event.at);
+      }
+      return ticket;
+    });
   }
   event(ticket, type, actor, details = {}) {
     ticket.events.push({ type, actor, at: now(), ...details });
@@ -117,6 +144,7 @@ export class Store {
   }
   create(input) {
     validateRequest(input);
+    if (input.binding_id !== undefined) this.binding(input.binding_id);
     const fingerprint = sha256(canonical(input));
     const previous = this.db.prepare('SELECT document, request_hash FROM tickets WHERE source = ? AND request_key = ?').get(input.source, input.request_key);
     if (previous) {
@@ -131,6 +159,7 @@ export class Store {
         id: `TK-${String(result.lastInsertRowid).padStart(6, '0')}`,
         title: input.title.trim(), description: input.description, acceptance: input.acceptance,
         source: input.source, request_key: input.request_key, units: input.units,
+        ...(input.binding_id ? { binding_id: input.binding_id } : {}),
         status: 'pending', revision: 0, created_at: time, updated_at: time,
         draft: { answers: {}, note: '', blocked_reason: '' }, attachments: [], submissions: [], reviews: [], events: [], archive_hash: null,
       };
@@ -139,13 +168,98 @@ export class Store {
     });
     return { ticket, created: true };
   }
-  list({ status, source, q = '' } = {}) {
+  list({ status, source, binding_id, q = '' } = {}) {
     const tickets = this.db.prepare('SELECT document FROM tickets ORDER BY seq DESC').all().map(row => JSON.parse(row.document));
-    return tickets.filter(t => (!status || t.status === status) && (!source || t.source === source)
+    return tickets.filter(t => (!status || t.status === status) && (!source || t.source === source) && (!binding_id || t.binding_id === binding_id)
       && (!q || `${t.id} ${t.title} ${t.source} ${t.archive_hash || ''}`.toLowerCase().includes(q.toLowerCase())))
       .map(t => ({ id: t.id, title: t.title, source: t.source, description: t.description,
         status: t.status, revision: t.revision, created_at: t.created_at, updated_at: t.updated_at,
-        unit_count: t.units.length, submission_count: t.submissions.length, archive_hash: t.archive_hash }));
+        unit_count: t.units.length, submission_count: t.submissions.length, archive_hash: t.archive_hash, binding_id: t.binding_id || null,
+        ...this.readState(t.id) }));
+  }
+  cursor() { return Number(this.db.prepare('SELECT COALESCE(MAX(seq), 0) AS id FROM activity').get().id); }
+  recordActivity(ticket, type, actor, message = '', at = now(), externalId = null) {
+    const submission = ticket.submissions.at(-1);
+    const event = { ticket_id: ticket.id, ticket_revision: ticket.revision, binding_id: ticket.binding_id || null,
+      type, actor, title: ticket.title, status: ticket.status, message, created_at: at,
+      submission_version: submission?.version || null, submission_hash: submission?.hash || null };
+    const row = this.db.prepare('INSERT INTO activity (ticket_id, binding_id, actor, type, document, external_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(ticket.id, event.binding_id, actor, type, JSON.stringify(event), externalId);
+    event.event_id = Number(row.lastInsertRowid);
+    this.pendingEvents.push(event);
+    return event;
+  }
+  activity(id, input) {
+    requireCondition(['agent.check_completed', 'agent.waiting_for_approval', 'agent.turn_finished', 'agent.message'].includes(input.type), '活动类型无效');
+    requireCondition(text(input.message) && input.message.length <= 2000, '活动消息需要 1–2000 字');
+    requireCondition(text(input.external_id) && input.external_id.length <= 200, '活动需要 external_id 去重标识');
+    const ticket = this.get(id);
+    // Activities have their own revision stream; they never rewrite frozen evidence.
+    const previous = this.db.prepare('SELECT seq, document FROM activity WHERE ticket_id = ? AND external_id = ?').get(id, input.external_id);
+    if (previous) {
+      const event = { ...JSON.parse(previous.document), event_id: previous.seq };
+      requireCondition(event.type === input.type && event.message === input.message, 'external_id 已用于不同活动', 409);
+      return event;
+    }
+    requireCondition(!['archived', 'cancelled'].includes(ticket.status), '已结束的工单不能追加活动', 409);
+    return this.transaction(() => this.recordActivity(ticket, input.type, 'agent', input.message, now(), input.external_id));
+  }
+  events({ after = 0, ticket_id, binding_id, audience, limit = 100 } = {}) {
+    after = Number(after); limit = Number(limit);
+    requireCondition(Number.isSafeInteger(after) && after >= 0 && Number.isInteger(limit) && limit >= 1 && limit <= 500, '事件游标或 limit 无效');
+    requireCondition(!audience || ['human', 'agent'].includes(audience), 'audience 需要 human 或 agent');
+    const clauses = ['seq > ?'], args = [after];
+    if (ticket_id) { this.get(ticket_id); clauses.push('ticket_id = ?'); args.push(ticket_id); }
+    if (binding_id) { this.binding(binding_id); clauses.push('binding_id = ?'); args.push(binding_id); }
+    if (audience) { clauses.push(audience === 'agent' ? "actor = 'human'" : "actor != 'human'"); }
+    const rows = this.db.prepare(`SELECT seq, document FROM activity WHERE ${clauses.join(' AND ')} ORDER BY seq LIMIT ?`).all(...args, limit);
+    const events = rows.map(row => ({ ...JSON.parse(row.document), event_id: Number(row.seq) }));
+    return { events, cursor: events.at(-1)?.event_id ?? after, latest_cursor: this.cursor() };
+  }
+  readState(id) {
+    const row = this.db.prepare(`SELECT COUNT(*) AS unread_count, COALESCE(MAX(seq), 0) AS last_event_id
+      FROM activity WHERE ticket_id = ? AND actor != 'human' AND seq > COALESCE((SELECT event_id FROM receipts WHERE ticket_id = ?), 0)`).get(id, id);
+    return { unread_count: Number(row.unread_count), last_event_id: Number(row.last_event_id) };
+  }
+  view(id) {
+    return { ...this.get(id), ...this.readState(id), activity: this.events({ ticket_id: id, limit: 500 }).events };
+  }
+  markRead(id, eventId) {
+    this.get(id);
+    requireCondition(Number.isSafeInteger(eventId) && eventId >= 0 && eventId <= this.cursor(), '已读游标无效');
+    this.db.prepare('INSERT INTO receipts VALUES (?, ?) ON CONFLICT(ticket_id) DO UPDATE SET event_id = MAX(event_id, excluded.event_id)').run(id, eventId);
+    this.emit('read', { ticket_id: id, event_id: eventId });
+    return this.readState(id);
+  }
+  bind(input) {
+    requireCondition(['codex', 'claude', 'generic'].includes(input.client) && text(input.session_id) && text(input.cwd), '绑定需要 client、session_id 和 cwd');
+    const previous = this.db.prepare('SELECT * FROM bindings WHERE client = ? AND session_id = ? AND cwd = ?').get(input.client, input.session_id, input.cwd);
+    if (previous) return previous;
+    const id = randomUUID();
+    this.db.prepare('INSERT INTO bindings (id, client, session_id, cwd, cursor) VALUES (?, ?, ?, ?, ?)').run(id, input.client, input.session_id, input.cwd, this.cursor());
+    return this.binding(id);
+  }
+  binding(id) {
+    requireCondition(typeof id === 'string', '需要绑定 ID');
+    const binding = this.db.prepare('SELECT * FROM bindings WHERE id = ?').get(id);
+    requireCondition(binding, '会话绑定不存在', 404);
+    return binding;
+  }
+  ackBinding(id, input) {
+    const binding = this.binding(id);
+    requireCondition(input.previous_cursor === binding.cursor, '绑定游标已改变，请重新读取', 409);
+    requireCondition(Number.isSafeInteger(input.cursor) && input.cursor >= binding.cursor && input.cursor <= this.cursor(), '确认游标无效');
+    this.db.prepare('UPDATE bindings SET cursor = ? WHERE id = ?').run(input.cursor, id);
+    return this.binding(id);
+  }
+  leaseBinding(id, input) {
+    this.binding(id);
+    requireCondition(Number.isInteger(input.seconds) && input.seconds >= 0 && input.seconds <= 3600, '监听租约需要 0–3600 秒');
+    const until = Date.now() + input.seconds * 1000;
+    const result = input.seconds === 0
+      ? this.db.prepare('UPDATE bindings SET lease_until = 0 WHERE id = ? AND lease_until = ?').run(id, input.lease_until)
+      : this.db.prepare('UPDATE bindings SET lease_until = ? WHERE id = ? AND lease_until <= ?').run(until, id, Date.now());
+    return { acquired: Number(result.changes) === 1, lease_until: until };
   }
   updateDraft(id, input) {
     const ticket = this.get(id);

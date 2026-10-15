@@ -1401,3 +1401,9 @@ dialog label {
     display:none
   }
 }
+.unread-total { color: #347d68; font-size: 11px; margin-left: 8px; }
+.unread-badge { display: inline-block; margin-left: 9px; padding: 2px 7px; border-radius: 10px; background: #e3f3ed; color: #236f59; font-size: 11px; font-weight: 600; vertical-align: middle; }
+.live-update { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+.live-update[hidden] { display: none; }
+.connection.disconnected { color: #a27022; }
+.agent-activity p { color: #347d68; }

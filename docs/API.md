@@ -6,7 +6,7 @@
 
 `POST /api/tickets`，请求例见 [examples/ticket.json](../examples/ticket.json)。
 
-必填字段为 title、description、acceptance、source、request_key、units。description 和 acceptance 可以是空字符串；其余文本必填。source 与 request_key 组合是幂等键，相同键和相同请求返回原工单（200），不同内容返回 409。新工单返回 201，响应包含 `{created, ticket, url}`。
+可选 binding_id 关联已登记会话，服务会检查绑定存在。必填字段为 title、description、acceptance、source、request_key、units。description 和 acceptance 可以是空字符串；其余文本必填。source 与 request_key 组合是幂等键，相同键和相同请求返回原工单（200），不同内容返回 409。新工单返回 201，响应包含 `{created, ticket, url}`。
 
 每个任务单元需要唯一 id（字母、数字、下划线、连字符，最长 64 位，不可使用对象保留键）、type、label、required（布尔值），可选 description。
 
@@ -18,9 +18,9 @@
 | choice | options: [{id,label}]、multiple 布尔值 | 选中的 option ID 数组；单选最多一个 |
 | attachment | 无 | 属于该单元的附件 ID 数组 |
 
-`GET /api/tickets` 返回 `{tickets:[摘要...]}`，可带 status、source、q 查询参数。status 是 pending、submitted、returned、blocked、archived、cancelled 之一。q 匹配标题、来源、工单 ID 和归档哈希。查询结果按工单创建顺序倒序。
+`GET /api/tickets` 返回 `{tickets:[摘要...]}`，可带 status、source、q、binding_id 查询参数。status 是 pending、submitted、returned、blocked、archived、cancelled 之一。q 匹配标题、来源、工单 ID 和归档哈希。查询结果按工单创建顺序倒序。
 
-`GET /api/tickets/{id}` 返回完整工单，包括 units、draft、attachments、submissions、reviews、events、revision、archive_hash。使用返回的 url 或 `/#ticket/{id}` 打开网页。请求来源和 request_key 可关联原 AI 任务。
+`GET /api/tickets/{id}` 返回完整工单，包括 units、draft、attachments、submissions、reviews、events、revision、archive_hash，另有 unread_count、last_event_id 和 activity。业务 events 属于归档历史；activity 是独立全局通知。使用返回的 url 或 `/#ticket/{id}` 打开网页。请求来源和 request_key 可关联原 AI 任务。
 
 `GET /api/tickets/{id}/attachments/{attachment_id}` 返回原始字节（读取时检查存储内容哈希）。PNG/JPEG/WebP/GIF 以图片类型返回，其他附件以 application/octet-stream 下载。添加 `?download=1` 强制下载。附件元数据中的 name 为原文件名，mime、size、sha256 描述上传的原始文件。
 
@@ -69,7 +69,7 @@ ZIP 包含 ticket.json、submissions/{版本}.json、attachments/{附件ID}、re
 
 ## 网页使用的人工接口
 
-以下接口需要从首页取得的 HttpOnly、SameSite=Strict 本机网页会话 Cookie。AI Bridge 不应代替人提交；单用户系统并不构成人员身份认证。所有修改返回完整工单，revision 递增。草稿只允许 pending、returned、blocked 状态编辑。
+以下接口需要从首页取得的 HttpOnly、SameSite=Strict 本机网页会话 Cookie。AI Bridge 不应代替人提交；单用户系统并不构成人员身份认证。草稿、上传和状态修改返回完整工单，revision 递增；已读接口独立，不改业务版本。草稿只允许 pending、returned、blocked 状态编辑。
 
 | 接口 | 请求 |
 | --- | --- |
@@ -82,6 +82,34 @@ ZIP 包含 ticket.json、submissions/{版本}.json、attachments/{附件ID}、re
 
 人工提交快照包含 version、submitted_at、answers、note 和 hash；hash 是除 hash 字段外的固定序列化 JSON 的 SHA-256。附件的原始 SHA-256 在附件元数据中保存，提交前检查被引用的附件未改变。
 
+## 事件与已读（v0.2）
+
+`GET /api/info` 包含 event_cursor（全局游标）。`GET /api/events` 接受 after（默认 0）、ticket_id、binding_id、audience（human 表示给人看的 AI/系统事件，agent 表示人类业务事件）、limit（1–500，默认 100）。返回 `{events,cursor,latest_cursor}`。cursor 是本页最后匹配的事件，分页携带 cursor；不要用 latest_cursor 跳过尚未读取的后续页。
+
+每个事件包含 event_id、ticket_id、ticket_revision、binding_id、type、actor、title、status、message、created_at，以及可用的 submission_version / submission_hash。支持 ticket.created、submission.created、ticket.blocked、ticket.resumed、review.returned、ticket.archived、ticket.cancelled 和下列 AI 活动。不为草稿输入和逐个上传发送唤醒事件。
+
+`GET /api/events/wait` 接受相同过滤条件及 timeout（0–25 秒，默认 25），有匹配事件立即返回，否则到期返回空 events；客户端取消会清理订阅。提交和对应业务事件在同一 SQLite 事务中保存，提交后才广播。
+
+`GET /api/events/stream` 是同源 SSE，接受相同过滤条件；连接先发送 ready，随后以 `id: event_id` 和 JSON data 推送。重连的 Last-Event-ID 优先于 URL after，断线事件从 SQLite 补读，15 秒心跳。浏览器用 Cookie，程序客户端用 Authorization 请求头；禁止把 token 放入 URL。
+
+人工接口 `POST /api/tickets/{id}/read` 请求 `{event_id}`，返回 unread_count 和 last_event_id，不改变工单 revision、提交或归档。只确认已经展示的游标，不自动确认未来更新。已读在同一台本机的浏览器窗口间共享。
+
+AI 接口 `POST /api/tickets/{id}/activity` 请求 `{type,message,external_id}`。type 为 agent.check_completed、agent.waiting_for_approval、agent.turn_finished、agent.message 之一；消息 1–2000 字，external_id 1–200 字。按工单和 external_id 去重，重复但内容不同返回 409。活动独立于证据，不能在已归档或已取消工单追加；turn_finished 不等于验收通过。
+
+## 会话绑定（v0.2）
+
+以下接口需要 Bearer 凭证：
+
+| 接口 | 请求 / 返回 |
+| --- | --- |
+| POST /api/bindings | `{client,session_id,cwd}`；client 为 codex、claude、generic；相同三元组返回同一个绑定 |
+| GET /api/bindings/{id} | `{id,client,session_id,cwd,cursor,lease_until}` |
+| POST /api/bindings/{id}/ack | `{previous_cursor,cursor}`；原游标必须相同，新游标不能超出已有全局游标 |
+| POST /api/bindings/{id}/lease | `{seconds}`，1–3600；未被占用时取得租约，返回 acquired 和 lease_until |
+| POST /api/bindings/{id}/lease | `{seconds:0,lease_until}`，只有匹配的租约才能释放 |
+
+绑定初始 cursor 为登记时的全局游标。先绑定，再创建携带 binding_id 的工单。游标确认表示脚本输出了通知，不能表示模型读完证据；无法以此保证外部模型只执行一次。客户端配置和限时等待见 [接入指南](接入指南.md)。
+
 ## 客户端边界
 
-本机 API 不开放跨域，不接受任意 Host，仅监听回环地址。Bearer 凭证不要写进 URL、截图、日志或工单。无内置 AI 调用、MCP 服务、主动唤醒、Webhook、远程访问或云端存储。
+本机 API 不开放跨域，不接受任意 Host，仅监听回环地址。Bearer 凭证不要写进 URL、截图、日志或工单。MCP、Skill 和 hook 都复用此 API。无内置模型调用、任意 shell 回调、远程访问或云端存储。主动续跑取决于客户端，见 [接入指南](接入指南.md)。

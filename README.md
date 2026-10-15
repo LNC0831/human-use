@@ -52,8 +52,8 @@ npm start
 ```
 
 Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Keep the server running;
-press Ctrl+C in its terminal to stop it. There are **no third-party dependencies**,
-no npm install step, and no frontend build step.
+press Ctrl+C in its terminal to stop it. The core server and Skill use only Node.js built-ins and need no build step.
+For MCP or the full test suite, first run `npm ci --ignore-scripts`.
 
 The first launch starts with an empty workspace. Click **新建示例** to create a
 sample work order. Completing the sample submits it for review; acceptance is
@@ -64,7 +64,9 @@ performed through the AI API.
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
 | PORT | 4317 | Local HTTP port |
-| WORKORDER_DATA_DIR | ./data | Data directory, resolved from the working directory |
+| WORKORDER_DATA_DIR | ./data for server | Server data directory, resolved from the working directory |
+| HUMAN_USE_URL | http://127.0.0.1:4317 | Skill, Bridge, MCP and hook API origin (loopback only) |
+| HUMAN_USE_TOKEN_FILE | checkout data/api-token for repository tools | Absolute token-file path; required for a copied Skill unless WORKORDER_DATA_DIR is set |
 
 For example, in PowerShell:
 
@@ -74,7 +76,9 @@ $env:WORKORDER_DATA_DIR = Join-Path $env:LOCALAPPDATA 'HumanUse'
 npm start
 ```
 
-Use the same environment values for the Bridge. Keep custom data directories
+Bridge, MCP and Skill can use `HUMAN_USE_URL` and an absolute `HUMAN_USE_TOKEN_FILE`.
+Without overrides the repository Bridge and MCP use the checkout’s data directory,
+independently of the client’s working directory. Keep custom data directories
 outside the checkout.
 
 ## Connect an AI agent
@@ -95,8 +99,21 @@ Inspect the latest submission and any relevant attachments, then send a review
 with its version, hash, decision (`accept` or `return`), and a reason. See the
 [API reference](docs/API.md) for the full contract and review examples.
 
-The browser refreshes state every 12 seconds while it is not being edited.
-The app does not wake a paused AI conversation; the client must query for results.
+Use **Skill + API** without MCP by copying [skills/human-use](skills/human-use)
+to your client’s skill directory and configuring its token-file path. The bundled
+API script works independently of this checkout and needs no npm dependencies.
+
+Alternatively, connect the stdio MCP entry `mcp/server.mjs` after `npm ci --ignore-scripts`.
+It provides 10 tools for tickets, original evidence, versioned review, archives,
+explicit session bindings, bounded waits and AI activity notices.
+
+The browser now uses SSE with persistent unread receipts and preserves unsaved
+input when updates arrive. Optional Codex / Claude hooks route human events to
+an explicitly bound session and show selected AI actions on the page. Idle wakeup
+depends on the client; Claude asyncRewake is an experimental opt-in, and Codex
+uses a bounded Stop window or next-turn catch-up.
+See the [integration guide](docs/接入指南.md) and [example configurations](integrations/).
+Promotion, package publication and marketplace distribution remain deferred.
 
 ## Storage and archive verification
 
@@ -139,12 +156,14 @@ See [SECURITY.md](SECURITY.md) for the trust boundaries and vulnerability report
 ## Development
 
 ```sh
+npm ci --ignore-scripts
 npm test
 ```
 
 Tests use Node.js's built-in runner and cover submission snapshots, return and
 resubmission, stale reviews, draft conflicts, tampering, persistence, HTTP access
-boundaries, and ZIP contents. CI is configured for Node.js 24 on Windows and Linux.
+boundaries, ZIP contents, durable events, SSE replay, a copied Skill, real SDK
+stdio calls and hook routing/exit codes. CI is configured for Node.js 24 on Windows and Linux.
 Restricted Windows sandboxes can block loopback connections or directory renames;
 run these checks in a normal local terminal.
 

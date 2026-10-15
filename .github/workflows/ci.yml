@@ -33,6 +33,8 @@ jobs:
           node-version: '24'
       - name: Check browser script
         run: node --check public/app.js
+      - name: Install MCP and test dependencies
+        run: npm ci --ignore-scripts
       - name: Check API Bridge
         run: node --check tools/bridge.mjs
       - name: Run tests

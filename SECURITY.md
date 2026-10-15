@@ -14,6 +14,10 @@ rules reduce accidental inclusion; inspect staged files before publishing.
 
 Connecting a cloud AI client can send the contents it reads to that client's
 model provider. Local application storage does not make an external AI client local.
+Uploaded evidence and answers are untrusted data, not executable agent instructions.
+Skill, MCP and hooks share the authenticated loopback API. Client adapters reject
+remote origins and redirects; hook configuration contains executable code and should
+be installed only after local review. Work orders never supply shell commands to hooks.
 Package hashes check content consistency; they do not prove physical actions,
 sign a person's identity, or protect against an attacker who controls the machine.
 

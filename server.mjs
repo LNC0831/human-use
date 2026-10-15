@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
@@ -35,7 +35,8 @@ async function jsonBody(request) {
 
 export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 'data') } = {}) {
   const store = new Store(dataDir);
-  const session = randomBytes(32).toString('hex');
+  const session = createHmac('sha256', store.token).update('human-use.browser-session.v1').digest('hex');
+  const streams = new Set();
   const server = createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
@@ -64,7 +65,51 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
       requireCondition(bearer || human, '需要本机 API Bearer token 或网页会话', 401);
       const agentOnly = () => requireCondition(bearer, '验收和取消需要 AI 接口凭证', 403);
       const humanOnly = () => requireCondition(human, '人工操作请使用本机网页会话', 403);
-      if (method === 'GET' && path === '/api/info') return send(200, { name: 'Human Use', version: '0.1.0', access: 'loopback', max_upload_bytes: MAX_UPLOAD });
+      if (method === 'GET' && path === '/api/info') return send(200, { name: 'Human Use', version: '0.2.0', access: 'loopback', max_upload_bytes: MAX_UPLOAD, event_cursor: store.cursor() });
+      if (method === 'GET' && ['/api/events', '/api/events/wait', '/api/events/stream'].includes(path)) {
+        const query = Object.fromEntries(url.searchParams);
+        if (request.headers['last-event-id']) query.after = request.headers['last-event-id'];
+        let result = store.events(query);
+        if (path === '/api/events') return send(200, result);
+        if (path === '/api/events/wait') {
+          const seconds = Number(query.timeout ?? 25);
+          requireCondition(Number.isFinite(seconds) && seconds >= 0 && seconds <= 25, '等待时间需要 0–25 秒');
+          if (result.events.length || !seconds) return send(200, result);
+          const finish = () => { cleanup(); if (!response.destroyed) send(200, store.events(query)); };
+          const changed = () => { if (store.events(query).events.length) finish(); };
+          const timer = setTimeout(finish, seconds * 1000);
+          const cleanup = () => { clearTimeout(timer); store.off('activity', changed); response.off('close', cleanup); };
+          store.on('activity', changed); response.on('close', cleanup);
+          return;
+        }
+        response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
+        response.flushHeaders();
+        let cursor = Number(query.after || 0);
+        const flush = () => {
+          do {
+            result = store.events({ ...query, after: cursor });
+            for (const event of result.events) { response.write(`event: message\nid: ${event.event_id}\ndata: ${JSON.stringify(event)}\n\n`); cursor = event.event_id; }
+          } while (result.events.length === Number(query.limit || 100));
+        };
+        store.on('activity', flush); streams.add(response);
+        const receipt = data => {
+          if (query.ticket_id && query.ticket_id !== data.ticket_id) return;
+          if (query.binding_id && store.get(data.ticket_id).binding_id !== query.binding_id) return;
+          response.write(`event: read\ndata: ${JSON.stringify(data)}\n\n`);
+        };
+        store.on('read', receipt);
+        response.write('event: ready\ndata: {}\n\n'); flush();
+        const heartbeat = setInterval(() => response.write(': heartbeat\n\n'), 15000); heartbeat.unref();
+        response.on('close', () => { clearInterval(heartbeat); store.off('activity', flush); store.off('read', receipt); streams.delete(response); });
+        return;
+      }
+      if (method === 'POST' && path === '/api/bindings') { agentOnly(); return send(200, store.bind(await jsonBody(request))); }
+      const bindingMatch = /^\/api\/bindings\/([a-f0-9-]+)(?:\/(ack|lease))?$/.exec(path);
+      if (bindingMatch) {
+        agentOnly(); const [, id, action] = bindingMatch;
+        if (method === 'GET' && !action) return send(200, store.binding(id));
+        if (method === 'POST' && action) return send(200, store[action === 'ack' ? 'ackBinding' : 'leaseBinding'](id, await jsonBody(request)));
+      }
       if (method === 'GET' && path === '/api/tickets') return send(200, { tickets: store.list(Object.fromEntries(url.searchParams)) });
       if (method === 'POST' && path === '/api/tickets') {
         agentOnly();
@@ -87,10 +132,12 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
         });
         return send(201, result);
       }
-      const ticketMatch = /^\/api\/tickets\/(TK-\d{6,})(?:\/(draft|submit|block|resume|review|cancel|attachments))?$/.exec(path);
+      const ticketMatch = /^\/api\/tickets\/(TK-\d{6,})(?:\/(draft|submit|block|resume|review|cancel|attachments|read|activity))?$/.exec(path);
       if (ticketMatch) {
         const [, id, action] = ticketMatch;
-        if (method === 'GET' && !action) return send(200, store.get(id));
+        if (method === 'GET' && !action) return send(200, store.view(id));
+        if (method === 'POST' && action === 'read') { humanOnly(); return send(200, store.markRead(id, (await jsonBody(request)).event_id)); }
+        if (method === 'POST' && action === 'activity') { agentOnly(); return send(201, store.activity(id, await jsonBody(request))); }
         if (method === 'POST' && action === 'attachments') {
           humanOnly();
           const bytes = await readBody(request, MAX_UPLOAD);
@@ -126,18 +173,19 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
       if (!response.headersSent && !response.destroyed) send(error.status || 500, { error: error instanceof HttpError ? error.message : '本机服务发生错误，请查看终端日志' });
     }
   });
-  return { server, store };
+  const close = callback => { for (const stream of streams) stream.end(); server.close(callback); server.closeAllConnections(); };
+  return { server, store, close };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 4317);
-  const { server, store } = createApp();
+  const { server, store, close } = createApp();
   server.listen(port, '127.0.0.1', () => {
     console.log(`Human Use 已启动：http://127.0.0.1:${server.address().port}`);
     console.log(`本地数据目录：${store.root}`);
     console.log(`API 凭证文件：${join(store.root, 'api-token')}（请勿公开）`);
   });
   server.on('error', error => { console.error(error); process.exitCode = 1; store.close(); });
-  process.on('SIGINT', () => server.close(() => { store.close(); process.exit(0); }));
-  process.on('SIGTERM', () => server.close(() => { store.close(); process.exit(0); }));
+  process.on('SIGINT', () => close(() => { store.close(); process.exit(0); }));
+  process.on('SIGTERM', () => close(() => { store.close(); process.exit(0); }));
 }
