@@ -5,6 +5,14 @@
   "type": "module",
   "description": "Local-first human-in-the-loop work orders for AI agents",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LNC0831/human-use.git"
+  },
+  "homepage": "https://github.com/LNC0831/human-use#readme",
+  "bugs": {
+    "url": "https://github.com/LNC0831/human-use/issues"
+  },
   "keywords": [
     "human-in-the-loop",
     "ai-agents",

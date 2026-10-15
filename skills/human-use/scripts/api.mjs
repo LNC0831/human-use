@@ -17,7 +17,13 @@ export function createClient({ defaultDataDir, url, tokenFile } = {}) {
     if (url.origin !== base.origin || !url.pathname.startsWith('/api/')) throw new Error('Use a local /api/ path.');
     const headers = { Authorization: `Bearer ${token}` };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
-    const response = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error', signal });
+    let response;
+    try {
+      response = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error', signal });
+    } catch (error) {
+      if (!['EACCES', 'EPERM'].includes(error.cause?.code)) throw error;
+      throw new Error(`${error.message}: ${error.cause.code} connecting to ${base.origin}. The agent sandbox may block local networking; retry this CLI command with the host's execution approval.`, { cause: error });
+    }
     if (!response.ok) {
       const error = await response.json();
       throw new Error(`${response.status} ${error.error}`);

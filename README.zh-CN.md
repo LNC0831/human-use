@@ -11,6 +11,8 @@
 需要 **Node.js 24+**。正式 npm 包名与发布账号尚待确认，目前未发布到 registry。可先在源码仓库生成安装包试用：
 
 ```powershell
+git clone https://github.com/LNC0831/human-use.git
+cd human-use
 npm ci --ignore-scripts
 npm pack
 npm install -g ./human-use-0.3.0.tgz

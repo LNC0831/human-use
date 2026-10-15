@@ -15,6 +15,8 @@ Requires **Node.js 24+**. The npm release name and publishing account are being
 finalized; no registry installation is available yet. To try the current source:
 
 ```sh
+git clone https://github.com/LNC0831/human-use.git
+cd human-use
 npm ci --ignore-scripts
 npm pack
 npm install -g ./human-use-0.3.0.tgz
@@ -141,13 +143,14 @@ npm run test:package
 Tests use Node's built-in runner and the official MCP SDK. The package smoke test
 installs the actual `.tgz` outside the checkout and exercises the CLI shim, copied
 skills, separate projects, browser submission, archive, restart and MCP.
-CI is configured for Node 24 on Windows and Linux; remote execution requires a
-GitHub repository. Restricted Windows sandboxes may need loopback/process permissions.
+GitHub Actions runs these checks on Node 24 for Windows and Linux.
+Restricted Windows sandboxes may need loopback/process permissions; the skills
+explain how to request approval for local CLI access.
 
 Version tags such as `v0.3.0` run CI and prepare a draft GitHub Release with the
 npm archive and checksums. npm publication is a separate manual workflow using
 the reviewed release asset and configured publishing identity. Publishing remains
-disabled until the owner, package name and repository are confirmed. Marketplace
+disabled until the npm owner and package name are confirmed. Marketplace
 distribution and promotion are deferred.
 
 For legacy source-only operation, `npm start` still runs the standalone server on
