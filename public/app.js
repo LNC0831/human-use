@@ -5,7 +5,6 @@ const icons = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   archive: '<rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v13h14V8m-10 4h6"/>',
   link: '<path d="m10 14 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 2 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" transform="translate(1 -1)"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
   arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
   back: '<path d="M19 12H5m5-5-5 5 5 5"/>',
   chevron: '<path d="m9 5 7 7-7 7"/>',
@@ -71,8 +70,7 @@ function nav() {
       ${item('pending', 'inbox', '待我处理', pending, route === 'pending')}
       ${item('submitted', 'clock', '等待验收', state.tickets.filter(t => t.status === 'submitted').length, route === 'submitted')}
       ${item('archives', 'archive', '归档记录', state.tickets.filter(t => t.status === 'archived').length, route.startsWith('archive'))}
-    </nav><div class="nav-separator"></div>
-    <a class="nav-item" href="#integration" data-action="integration">${icon('link')}接入 AI</a>
+    </nav>
     <div class="sidebar-bottom"><div class="local-tag"><span class="dot"></span>仅在本机运行</div><p>工单、附件与归档保存在本机<br>每一次协作，都有据可查。</p></div>
   </aside>`;
 }
@@ -108,14 +106,14 @@ function matchingTickets() {
 }
 function table() {
   const tickets = matchingTickets();
-  if (!tickets.length) return empty(state.tickets.length ? '这里暂时没有工单' : '准备好，接住 AI 交给你的一步', state.tickets.length ? '试试其他状态，或者换一个搜索关键词。' : 'AI 发起请求后，工单会出现在这里。也可以先用一张示例工单，体验填写、提交与验收。', state.tickets.length ? '' : '<button class="btn primary" data-action="demo">创建一张示例工单</button>');
+  if (!tickets.length) return empty(state.tickets.length ? '这里暂时没有工单' : '准备好，接住 AI 交给你的一步', state.tickets.length ? '试试其他状态，或者换一个搜索关键词。' : 'AI 发起请求后，工单会出现在这里。');
   return `<div class="table-scroll"><table class="ticket-table"><thead><tr><th>工单 / 任务</th><th class="source-col">来源</th><th>状态</th><th class="date-col">最近更新</th><th></th></tr></thead><tbody>${tickets.map(t => `<tr><td><a class="ticket-title" href="#ticket/${t.id}">${escape(t.title)}</a>${t.unread_count ? `<span class="unread-badge">${t.status === 'pending' ? '新' : '有更新'}</span>` : ''}<div class="ticket-meta"><span class="mono">${t.id}</span><span>·</span><span>${t.unit_count} 个任务单元</span>${t.submission_count ? `<span>· 第 ${t.submission_count} 次提交</span>` : ''}</div></td><td class="source-col"><span class="source">${icon('link')}${escape(t.source)}</span></td><td>${badge(t.status)}</td><td class="muted date-col">${date(t.updated_at)}</td><td><a class="row-link" href="#ticket/${t.id}">${canEdit(t) ? '去处理' : '查看'} ${icon('arrow')}</a></td></tr>`).join('')}</tbody></table></div>`;
 }
 function renderList() {
   const processing = state.tickets.filter(t => ['pending', 'returned', 'blocked'].includes(t.status)).length;
   const submitted = state.tickets.filter(t => t.status === 'submitted').length, archived = state.tickets.filter(t => t.status === 'archived').length;
   const tabs = [['all', '全部'], ['pending', '待处理'], ['submitted', '待验收'], ['returned', '需补充'], ['blocked', '无法完成'], ['cancelled', '已取消']];
-  shell(`<div class="page-heading"><div><div class="eyebrow">HUMAN × AI COLLABORATION</div><h1>每一步协作，都有着落。</h1><p class="subtitle">处理 AI 发起的请求，把结果与证据交回下一步。</p></div><div class="actions"><button class="btn" data-action="refresh">${icon('refresh')}刷新</button><button class="btn primary" data-action="demo">${icon('plus')}新建示例</button></div></div>
+  shell(`<div class="page-heading"><div><div class="eyebrow">HUMAN × AI COLLABORATION</div><h1>每一步协作，都有着落。</h1><p class="subtitle">处理 AI 发起的请求，把结果与证据交回下一步。</p></div><div class="actions"><button class="btn" data-action="refresh">${icon('refresh')}刷新</button></div></div>
     <div class="stats"><div class="stat"><div class="stat-icon">${icon('inbox')}</div><div><p class="stat-label">需要你处理</p><p class="stat-value">${processing}<span class="small muted"> 项</span></p></div><span class="stat-caption">等待人的一步</span></div><div class="stat"><div class="stat-icon">${icon('clock')}</div><div><p class="stat-label">等待 AI 验收</p><p class="stat-value">${submitted}<span class="small muted"> 项</span></p></div><span class="stat-caption">结果已经交回</span></div><div class="stat"><div class="stat-icon">${icon('archive')}</div><div><p class="stat-label">已完成归档</p><p class="stat-value">${archived}<span class="small muted"> 项</span></p></div><span class="stat-caption">协作形成闭环</span></div></div>
     <section class="panel"><div class="panel-toolbar"><div class="tabs">${tabs.map(([filter, label]) => `<button class="tab${state.filter === filter ? ' active' : ''}" data-filter="${filter}">${label}</button>`).join('')}</div><label class="search">${icon('search')}<input id="search" type="search" value="${escape(state.q)}" placeholder="搜索标题、来源或工单号" aria-label="搜索工单"></label></div><div id="ticket-table">${table()}</div><div class="panel-footer"><span id="list-count">共 ${matchingTickets().length} 张工单</span><span>人完成操作 · AI 验收结果 · 本机保留证据</span></div></section><p class="footnote">${icon('shield')}数据保存在本机。提交形成版本记录，AI 验收通过后生成归档包。</p>`);
 }
@@ -229,10 +227,6 @@ function renderArchives() {
 function archiveResult(result) {
   return `<section class="card archive-result"><div class="banner ${result.valid ? 'success' : 'error'}"><strong>${result.valid ? '完整性校验通过' : '完整性校验失败'}</strong>${result.valid ? `${result.file_count} 个文件与清单一致，清单哈希与工单包标识一致。` : escape(result.errors.join('；'))}</div>${result.ticket ? `<h2>${escape(result.ticket.title)}</h2><p>${escape(result.ticket.id)} · ${escape(result.ticket.source)}</p>` : ''}<div class="hash-box">${result.hash}</div><div class="actions"><button class="btn" data-action="verify" data-hash="${result.hash}">${icon('refresh')}重新校验</button>${result.valid ? `<a class="btn primary" href="/api/archives/${result.hash}/download">${icon('download')}导出工单包 ZIP</a>` : ''}${result.ticket ? `<a class="btn" href="#ticket/${result.ticket.id}">查看工单</a>` : ''}</div></section>`;
 }
-function openIntegration() {
-  dialog.innerHTML = `<div class="dialog-header"><h2>让 AI 接入协作台</h2><button class="btn quiet" data-action="close-dialog" aria-label="关闭">${icon('close')}</button></div><p>通过本机 HTTP API 创建工单、读取提交与附件，再返回验收结论。网页负责人的操作，API 负责 AI 的交接。</p><p>地址：<code>${escape(location.origin)}/api</code><br>凭证保存在数据目录的 <code>api-token</code> 文件，请由本机 AI 客户端读取，并用 <code>Authorization: Bearer &lt;token&gt;</code> 发送。</p><table class="api-table"><tbody><tr><td>创建请求</td><td><code>POST /api/tickets</code></td></tr><tr><td>查询状态</td><td><code>GET /api/tickets?status=submitted</code></td></tr><tr><td>读取工单</td><td><code>GET /api/tickets/{id}</code></td></tr><tr><td>读取附件</td><td><code>GET /api/tickets/{id}/attachments/{attachment_id}</code></td></tr><tr><td>验收提交</td><td><code>POST /api/tickets/{id}/review</code></td></tr><tr><td>读取归档</td><td><code>GET /api/archives/{hash}</code></td></tr></tbody></table><p>验收请求示例。版本号和哈希必须来自刚读取的最新提交：</p><pre class="api-code">${escape(JSON.stringify({ version: 1, submission_hash: '<最新提交的完整哈希>', decision: 'accept', reason: '操作记录和附件满足验收标准。' }, null, 2))}</pre><p>可使用 MCP，或复制 skills/human-use 后通过 Skill + API 接入。会话 hook 配置见 integrations/，需要在客户端中手动启用。详细步骤见 docs/接入指南.md，API 契约见 docs/API.md。云端 AI 读取内容后是否外发，由接入客户端控制。</p><div class="dialog-footer"><button class="btn primary" data-action="close-dialog">知道了</button></div>`;
-  dialog.showModal();
-}
 function openBlock() {
   dialog.innerHTML = `<div class="dialog-header"><h2>报告无法完成</h2><button class="btn quiet" data-action="close-dialog" aria-label="关闭">${icon('close')}</button></div><p>先保存当前进展，再告诉 AI 卡在哪里。无需完成所有必填项。</p><form id="block-form"><label for="block-reason">无法完成的原因</label><textarea id="block-reason" required placeholder="例如：缺少测量工具，无法读取实际电压。">${escape(state.ticket.draft.blocked_reason)}</textarea><div class="dialog-footer"><button class="btn" type="button" data-action="close-dialog">返回</button><button class="btn primary" type="submit">保存并报告</button></div></form>`;
   dialog.showModal();
@@ -255,7 +249,6 @@ async function route() {
     } else {
       state.filter = ['all','pending','submitted','returned','blocked','cancelled'].includes(route) ? route : 'all';
       renderList();
-      if (route === 'integration') openIntegration();
     }
   } catch (error) {
     shell(`<div class="error-state">${escape(error.message)}<p><a href="#all">返回工单列表</a></p></div>`);
@@ -273,7 +266,6 @@ document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
-  if (action === 'integration') { event.preventDefault(); openIntegration(); return; }
   if (action === 'close-dialog') { dialog.close(); return; }
   if (action === 'block') { openBlock(); return; }
   if (action === 'choose-file') { document.getElementById(`file-${button.dataset.unit}`).click(); return; }
@@ -282,12 +274,6 @@ document.addEventListener('click', event => {
     markDirty(); return;
   }
   run(async () => {
-    if (action === 'demo') {
-      if (state.dirty && !confirm('创建示例工单会离开当前页面，未保存修改会丢失。确定继续？')) return;
-      const result = await api('/api/demo', { method: 'POST' });
-      state.dirty = false;
-      location.hash = `ticket/${result.ticket.id}`;
-    }
     if (action === 'refresh') {
       if (state.dirty && !confirm('重新载入会丢弃未保存的修改。确定继续？')) return;
       await route(); toast('已更新');
@@ -302,7 +288,11 @@ document.addEventListener('click', event => {
     if (action === 'submit') {
       await saveDraft();
       state.ticket = await api(`/api/tickets/${state.ticket.id}/submit`, { method: 'POST', body: { revision: state.ticket.revision } });
-      await refreshList(); renderTicket(); toast('已提交，等待 AI 验收');
+      // Replace the route directly so the busy guard cannot undo this navigation.
+      activeHash = '#all';
+      window.history.replaceState(null, '', location.pathname + location.search + activeHash);
+      state.ticket = null;
+      await route(); toast('已提交，等待 AI 验收');
     }
     if (action === 'resume') {
       await saveDraft();
