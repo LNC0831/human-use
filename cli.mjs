@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initializeProject, locateProject } from './lib/project.mjs';
@@ -66,6 +67,6 @@ export async function main(args = process.argv.slice(2)) {
   }
   console.log(JSON.stringify(result, null, 2));
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === fileURLToPath(import.meta.url)) {
   main().catch(error => { console.error(`Human Use: ${error.message}`); process.exitCode = 1; });
 }
