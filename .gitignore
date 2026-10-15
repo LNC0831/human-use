@@ -1,0 +1,38 @@
+# Local work orders, evidence and backups (including custom data directories)
+/data/
+**/attachments/
+**/archives/
+**/backups/
+**/api-token
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.zip
+
+# Local test runs and validation notes
+/.test-data/
+/docs/验证记录-*.md
+coverage/
+*.log
+*.tmp
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Dependencies and local editor settings
+node_modules/
+.vscode/
+.idea/
+.codex/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,23 @@
+{
+  "title": "确认设备连接与供电",
+  "description": "请在现场确认设备连接、记录状态，并提供照片供 AI 核对。",
+  "acceptance": "完成连接检查，提供实测电压、状态说明和一张清晰的接线照片。",
+  "source": "my-ai-project",
+  "request_key": "power-check-001",
+  "units": [
+    {
+      "id": "setup", "type": "checklist", "label": "检查连接", "required": true,
+      "items": [
+        { "id": "power", "label": "检查电源连接" },
+        { "id": "indicator", "label": "观察指示灯" }
+      ]
+    },
+    { "id": "voltage", "type": "number", "label": "实测供电电压", "required": true, "unit": "V" },
+    {
+      "id": "state", "type": "choice", "label": "设备状态", "required": true, "multiple": false,
+      "options": [{ "id": "normal", "label": "正常" }, { "id": "abnormal", "label": "异常" }]
+    },
+    { "id": "observation", "type": "text", "label": "现场观察结果", "required": true },
+    { "id": "photo", "type": "attachment", "label": "接线照片", "required": true }
+  ]
+}

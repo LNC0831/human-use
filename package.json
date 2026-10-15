@@ -1,0 +1,14 @@
+{
+  "name": "human-use",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first human-in-the-loop work orders for AI agents",
+  "license": "MIT",
+  "keywords": ["human-in-the-loop", "ai-agents", "work-orders", "local-first"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  }
+}

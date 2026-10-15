@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a reproducible problem in Human Use.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: Use synthetic examples. Do not upload real work orders, API tokens, or private screenshots. See SECURITY.md for security issues.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the operating system, Node.js version, browser, and Human Use version or commit.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Give the smallest reproducible example, with redacted input if needed.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Remove credentials, private file paths, and identifying content before sharing.
