@@ -18,6 +18,7 @@
       "options": [{ "id": "normal", "label": "正常" }, { "id": "abnormal", "label": "异常" }]
     },
     { "id": "observation", "type": "text", "label": "现场观察结果", "required": true },
+    { "id": "operated_at", "type": "timestamp", "label": "操作时间", "required": true, "description": "手动调整，或点击 Get Time 获取当前时间。" },
     { "id": "photo", "type": "attachment", "label": "接线照片", "required": true }
   ]
 }

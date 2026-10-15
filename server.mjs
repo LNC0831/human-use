@@ -134,6 +134,7 @@ export function createApp({ dataDir = resolve(process.env.WORKORDER_DATA_DIR || 
           units: [
             { id: 'setup', type: 'checklist', label: '完成连接检查', required: true, items: [{ id: 'cable', label: '检查电源线与数据线连接牢固' }, { id: 'indicator', label: '观察设备指示灯状态' }] },
             { id: 'voltage', type: 'number', label: '记录实测供电电压', required: true, unit: 'V' },
+            { id: 'operated_at', type: 'timestamp', label: '操作时间', required: true, description: '可手动调整，或点击 Get Time 填入当前本地时间。' },
             { id: 'state', type: 'choice', label: '设备当前状态', required: true, multiple: false, options: [{ id: 'normal', label: '运行正常' }, { id: 'abnormal', label: '存在异常' }] },
             { id: 'observation', type: 'text', label: '描述观察结果', required: true, description: '说明指示灯状态、运行现象或异常信息。' },
             { id: 'photo', type: 'attachment', label: '上传连接照片', required: true, description: '上传一张能看清电源和接口连接的照片，也可添加相关日志。' },

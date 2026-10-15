@@ -21,7 +21,7 @@ Create (`POST /api/tickets`):
 }
 ```
 
-All unit IDs must be unique simple ASCII identifiers. `description` is optional on units. Required checklists require every item. People may paste screenshots into attachment areas. Only the browser can save drafts, upload and submit.
+All unit IDs must be unique simple ASCII identifiers. `description` is optional on units. Required checklists require every item. Add `{ "id": "operated_at", "type": "timestamp", "label": "Operation time", "required": true }` for a manually editable local date/time with a Get Time button. Answers use UTC ISO strings such as `2026-10-15T10:30:00.000Z`; empty optional values use `""`. Get Time fills the user's current local time without submitting. This is a user-editable observation, separate from the service-generated submission time. People may paste screenshots into attachment areas. Only the browser can save drafts, upload and submit.
 
 Optional binding: `POST /api/bindings` with `{ "client": "generic", "session_id": "<your real session ID>", "cwd": "<absolute project directory>" }`; add the returned `id` as `binding_id` when creating a ticket. Session hook context already contains a registered ID.
 

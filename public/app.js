@@ -120,10 +120,14 @@ function renderList() {
     <section class="panel"><div class="panel-toolbar"><div class="tabs">${tabs.map(([filter, label]) => `<button class="tab${state.filter === filter ? ' active' : ''}" data-filter="${filter}">${label}</button>`).join('')}</div><label class="search">${icon('search')}<input id="search" type="search" value="${escape(state.q)}" placeholder="搜索标题、来源或工单号" aria-label="搜索工单"></label></div><div id="ticket-table">${table()}</div><div class="panel-footer"><span id="list-count">共 ${matchingTickets().length} 张工单</span><span>人完成操作 · AI 验收结果 · 本机保留证据</span></div></section><p class="footnote">${icon('shield')}数据保存在本机。提交形成版本记录，AI 验收通过后生成归档包。</p>`);
 }
 function complete(unit, value) {
-  if (unit.type === 'text') return typeof value === 'string' && value.trim().length > 0;
+  if (unit.type === 'text' || unit.type === 'timestamp') return typeof value === 'string' && value.trim().length > 0;
   if (unit.type === 'number') return typeof value === 'number' && Number.isFinite(value);
   if (unit.type === 'checklist') return Array.isArray(value) && value.length === unit.items.length;
   return Array.isArray(value) && value.length > 0;
+}
+function localTimestamp(value) {
+  const d = new Date(value), pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 function attachmentList(ticket, unit, ids, editable) {
   const attachments = ticket.attachments.filter(a => a.unit_id === unit.id && (ids.includes(a.id)
@@ -138,6 +142,7 @@ function unitMarkup(ticket, unit, index) {
   const value = ticket.draft.answers[unit.id], editable = canEdit(ticket);
   let field = '';
   if (unit.type === 'text') field = editable ? `<textarea data-answer="${unit.id}" placeholder="填写你的回复…" aria-label="${escape(unit.label)}">${escape(value || '')}</textarea>` : `<div class="answer-text">${escape(value || '未填写')}</div>`;
+  if (unit.type === 'timestamp') field = editable ? `<div class="timestamp-field"><input type="datetime-local" step="1" data-answer="${unit.id}" value="${value ? localTimestamp(value) : ''}" aria-label="${escape(unit.label)}"><button class="btn" type="button" data-action="get-time" data-unit="${unit.id}">Get Time</button></div>` : `<div class="answer-text">${value ? escape(localTimestamp(value).replace('T', ' ')) : '未填写'}</div>`;
   if (unit.type === 'number') field = editable ? `<div class="numeric"><input type="number" step="any" data-answer="${unit.id}" value="${value ?? ''}" aria-label="${escape(unit.label)}" placeholder="填写数值"><span>${escape(unit.unit || '')}</span></div>` : `<div class="answer-text">${value ?? '未填写'} ${escape(unit.unit || '')}</div>`;
   if (['checklist', 'choice'].includes(unit.type)) {
     const options = unit.type === 'checklist' ? unit.items : unit.options;
@@ -153,6 +158,7 @@ function historyMarkup(ticket) {
     const answer = submission.answers[unit.id];
     let display;
     if (unit.type === 'attachment') display = attachmentList(ticket, unit, answer || [], false);
+    else if (unit.type === 'timestamp') display = `<p>${answer ? escape(localTimestamp(answer).replace('T', ' ')) : '未填写'}</p>`;
     else if (unit.type === 'checklist' || unit.type === 'choice') display = `<p>${escape((unit.type === 'checklist' ? unit.items : unit.options).filter(o => (answer || []).includes(o.id)).map(o => o.label).join('；') || '未填写')}</p>`;
     else display = `<p>${escape(answer ?? '未填写')}${unit.type === 'number' ? ' ' + escape(unit.unit || '') : ''}</p>`;
     return `<div class="history-answer"><strong>${escape(unit.label)}</strong>${display}</div>`;
@@ -189,6 +195,10 @@ function readForm() {
     } else {
       const elements = [...document.querySelectorAll('[data-answer]')].filter(el => el.dataset.answer === unit.id);
       if (unit.type === 'text') answers[unit.id] = elements[0].value;
+      else if (unit.type === 'timestamp') {
+        if (!elements[0].validity.valid) throw new Error(`${unit.label} 需要完整有效的日期和时间`);
+        answers[unit.id] = elements[0].value ? new Date(elements[0].value).toISOString() : '';
+      }
       else if (unit.type === 'number') {
         if (elements[0].validity.badInput) throw new Error(`${unit.label} 需要有效数值`);
         answers[unit.id] = elements[0].value === '' ? null : elements[0].valueAsNumber;
@@ -267,6 +277,10 @@ document.addEventListener('click', event => {
   if (action === 'close-dialog') { dialog.close(); return; }
   if (action === 'block') { openBlock(); return; }
   if (action === 'choose-file') { document.getElementById(`file-${button.dataset.unit}`).click(); return; }
+  if (action === 'get-time') {
+    document.querySelector(`[data-answer="${button.dataset.unit}"]`).value = localTimestamp(new Date().toISOString());
+    markDirty(); return;
+  }
   run(async () => {
     if (action === 'demo') {
       if (state.dirty && !confirm('创建示例工单会离开当前页面，未保存修改会丢失。确定继续？')) return;

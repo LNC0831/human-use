@@ -15,7 +15,8 @@ const now = () => new Date().toISOString();
 const editable = ticket => ['pending', 'returned', 'blocked'].includes(ticket.status);
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' && value.trim().length > 0;
-const types = ['checklist', 'text', 'number', 'choice', 'attachment'];
+const types = ['checklist', 'text', 'number', 'choice', 'attachment', 'timestamp'];
+const isTimestamp = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 
 function validateRequest(input) {
   requireCondition(isObject(input), '请求必须是 JSON 对象');
@@ -54,6 +55,7 @@ function validateAnswers(ticket, answers, submitting) {
     const unit = units.get(id);
     requireCondition(unit, `未知任务单元：${id}`);
     if (unit.type === 'text') requireCondition(typeof value === 'string', `${unit.label} 需要文本`);
+    else if (unit.type === 'timestamp') requireCondition(value === '' || isTimestamp(value), `${unit.label} 需要有效的 UTC ISO 时间戳`);
     else if (unit.type === 'number') requireCondition(value === null || (typeof value === 'number' && Number.isFinite(value)), `${unit.label} 需要数值`);
     else {
       requireCondition(Array.isArray(value) && value.every(v => typeof v === 'string') && new Set(value).size === value.length, `${unit.label} 需要无重复的 ID 数组`);
@@ -68,7 +70,7 @@ function validateAnswers(ticket, answers, submitting) {
   for (const unit of ticket.units.filter(unit => unit.required)) {
     const value = answers[unit.id];
     let complete;
-    if (unit.type === 'text') complete = text(value);
+    if (unit.type === 'text' || unit.type === 'timestamp') complete = text(value);
     else if (unit.type === 'number') complete = typeof value === 'number' && Number.isFinite(value);
     else if (unit.type === 'checklist') complete = Array.isArray(value) && value.length === unit.items.length;
     else complete = Array.isArray(value) && value.length > 0;

@@ -14,6 +14,7 @@ const common = { id: z.string(), label: z.string(), required: z.boolean(), descr
 const unit = z.discriminatedUnion('type', [
   z.object({ ...common, type: z.literal('checklist'), items: z.array(option).min(1) }),
   z.object({ ...common, type: z.literal('text') }),
+  z.object({ ...common, type: z.literal('timestamp') }),
   z.object({ ...common, type: z.literal('number'), unit: z.string().optional() }),
   z.object({ ...common, type: z.literal('choice'), options: z.array(option).min(1), multiple: z.boolean() }),
   z.object({ ...common, type: z.literal('attachment') }),

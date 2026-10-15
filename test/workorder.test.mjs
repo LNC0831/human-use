@@ -176,6 +176,34 @@ test('已有无 units 的旧版提交在追加控件及归档后维持原哈希'
   assert.equal(store.archiveInfo(ticket.archive_hash).valid, true);
 });
 
+test('时间戳支持手动保存、必填检查和按版本归档，拒绝无效日期', t => {
+  const { store, root } = fixture(t);
+  let ticket = store.create(request({ units: [
+    { id: 'operated_at', type: 'timestamp', label: '操作时间', required: true },
+    { id: 'optional_time', type: 'timestamp', label: '可选时间', required: false },
+  ] })).ticket;
+  assert.throws(() => store.submit(ticket.id, { revision: ticket.revision }), { status: 422 });
+  for (const value of [null, 123, 'not-a-date', '2026-10-15T18:30:00', '2026-02-30T10:30:00.000Z']) {
+    assert.throws(() => store.updateDraft(ticket.id, { revision: ticket.revision, answers: { operated_at: value }, note: '' }), { status: 400 });
+  }
+  ticket = store.updateDraft(ticket.id, { revision: ticket.revision, answers: { operated_at: '', optional_time: '' }, note: '' });
+  assert.throws(() => store.submit(ticket.id, { revision: ticket.revision }), { status: 422 });
+  const manual = '2026-10-15T10:30:00.000Z';
+  ticket = store.updateDraft(ticket.id, { revision: ticket.revision, answers: { operated_at: manual, optional_time: '' }, note: '手动记录' });
+  ticket = store.submit(ticket.id, { revision: ticket.revision });
+  const original = structuredClone(ticket.submissions[0]);
+  assert.equal(original.answers.operated_at, manual);
+  ticket = store.review(ticket.id, reviewInput(ticket, 'return', '校正操作时间'));
+  ticket = store.updateDraft(ticket.id, { revision: ticket.revision, answers: { operated_at: '2026-10-15T11:30:00.000Z', optional_time: '' }, note: '已校正' });
+  assert.deepEqual(ticket.submissions[0], original);
+  ticket = store.submit(ticket.id, { revision: ticket.revision });
+  ticket = store.review(ticket.id, reviewInput(ticket, 'accept', '时间记录已检查'));
+  const folder = join(root, 'archives', ticket.archive_hash, 'submissions');
+  assert.equal(JSON.parse(readFileSync(join(folder, '1.json'), 'utf8')).answers.operated_at, manual);
+  assert.equal(JSON.parse(readFileSync(join(folder, '2.json'), 'utf8')).answers.operated_at, '2026-10-15T11:30:00.000Z');
+  assert.equal(store.archiveInfo(ticket.archive_hash).valid, true);
+});
+
 test('附件归属、原始证据被修改与归档包篡改均明确失败', t => {
   const { store, root } = fixture(t);
   let ticket = ready(store);

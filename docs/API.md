@@ -15,9 +15,11 @@ CLI 项目服务的端口自动分配，通过 human-use status 查看，或用 
 | checklist | items: [{id,label}] | 已完成 item ID 数组；必填单元要求全部勾选 |
 | text | 无 | 字符串 |
 | number | 可选 unit 字符串 | 数值或草稿中的 null；0 是有效数值 |
+| timestamp | 无 | UTC ISO 8601 字符串，例如 `2026-10-15T10:30:00.000Z`；草稿或选填项可为空字符串 |
 | choice | options: [{id,label}]、multiple 布尔值 | 选中的 option ID 数组；单选最多一个 |
 | attachment | 无 | 属于该单元的附件 ID 数组 |
 
+timestamp 在网页上显示为可手动编辑的本地日期时间，精确到秒；右侧 Get Time 读取浏览器所在电脑的当前时间，仅填入该字段，不自动保存或提交。保存时转换成 UTC ISO 字符串，读取和历史显示时转换回浏览器的本地时间。必填时间为空时不能提交。它是可由人调整的操作时间记录，独立于服务生成的 submitted_at，不作为可信时间认证。
 
 `GET /api/tickets` 返回 `{tickets:[摘要...]}`，可带 status、source、q、binding_id 查询参数。status 是 pending、submitted、returned、blocked、archived、cancelled 之一。q 匹配标题、来源、工单 ID 和归档哈希。查询结果按工单创建顺序倒序。
 

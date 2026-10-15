@@ -17,7 +17,7 @@ If MCP is already connected, its equivalent Human Use tools can be used instead.
 
 ## Hand off work
 
-Explain the required action and acceptance criteria. Choose checklist, text, number, choice or attachment units according to what the person needs to supply. Write a JSON request file, then run:
+Explain the required action and acceptance criteria. Choose checklist, text, number, timestamp, choice or attachment units according to what the person needs to supply. A timestamp lets the person record an operation time manually or with Get Time; it is not an authenticated time source. Write a JSON request file, then run:
 
 ```sh
 node <skill-directory>/scripts/cli.mjs api POST /api/tickets <request.json> --project <project-root>
