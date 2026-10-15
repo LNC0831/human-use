@@ -74,11 +74,12 @@ test('committed events, independent read receipts, activity deduplication, rollb
 });
 
 test('SSE replays after a cursor, respects routing, long-poll wakes and abort cleans listeners', async t => {
+  const controller = new AbortController();
+  t.after(() => controller.abort());
   const f = await fixture(t);
   const first = f.store.create(request()).ticket;
   const cursor = f.store.cursor();
-  const controller = new AbortController();
-  const stream = await fetch(`${f.url}/api/events/stream?after=${cursor}&ticket_id=${first.id}`, { headers: f.agent, signal: controller.signal });
+  const stream = await fetch(`${f.url}/api/events/stream?after=${cursor}&ticket_id=${first.id}`, { headers: f.agent, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]) });
   const reader = stream.body.getReader();
   const firstChunk = new TextDecoder().decode((await reader.read()).value);
   assert.match(firstChunk, /event: ready/);

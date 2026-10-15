@@ -16,7 +16,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test",
+    "test": "node --test --test-timeout=60000",
     "mcp": "node mcp/server.mjs",
     "test:package": "node scripts/smoke-package.mjs",
     "check:release": "node scripts/check-release.mjs"
